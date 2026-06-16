@@ -1,0 +1,3 @@
+# These files run/parse on Linux — keep LF regardless of the checkout platform.
+* text=auto eol=lf
+*.sh text eol=lf
