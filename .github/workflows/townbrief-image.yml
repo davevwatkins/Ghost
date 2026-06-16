@@ -1,0 +1,79 @@
+# TownBrief additive CD: build the forked Ghost "full" image and publish to GHCR
+# so the production server can just `docker pull` it (no on-server build).
+#
+# This is a NEW file (does not edit upstream ci.yml), so upstream syncs won't conflict.
+# Mirrors the production-image steps in .github/workflows/ci.yml.
+#
+# After the first successful run, make the package pullable by the server:
+#   GitHub > your profile > Packages > ghost > Package settings >
+#     either set visibility Public, or grant a deploy token read:packages.
+name: TownBrief — Build & publish Ghost image
+
+on:
+  push:
+    branches: [townbrief]
+    tags: ['v*-townbrief']
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: 22.18.0
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build server + admin assets
+        run: |
+          PKG_VERSION=$(node -p "require('./ghost/core/package.json').version")
+          export GHOST_BUILD_VERSION="${PKG_VERSION}+${GITHUB_SHA:0:7}"
+          echo "GHOST_BUILD_VERSION=${GHOST_BUILD_VERSION}" >> "$GITHUB_ENV"
+          pnpm build:production
+
+      - name: Pack standalone distribution
+        run: pnpm --filter ghost archive
+
+      - name: Prepare Docker build context
+        run: mv ghost/core/package /tmp/ghost-production
+
+      - name: Lowercase owner
+        id: owner
+        run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push full image
+        uses: docker/build-push-action@v7
+        with:
+          context: /tmp/ghost-production
+          file: Dockerfile.production
+          target: full
+          build-args: |
+            NODE_VERSION=${{ env.NODE_VERSION }}
+            GHOST_BUILD_VERSION=${{ env.GHOST_BUILD_VERSION }}
+          push: true
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.name }}/ghost:latest
+            ghcr.io/${{ steps.owner.outputs.name }}/ghost:${{ github.sha }}

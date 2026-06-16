@@ -1,0 +1,72 @@
+# TownBrief — production stack for the forked Ghost.
+# Run on an Ubuntu VPS (GoDaddy "Servers"/VPS, DigitalOcean, etc.) with Docker installed.
+#   cp .env.example .env   # then edit secrets
+#   docker compose -f compose.production.yaml up -d
+#
+# Ghost runtime is configured entirely via env vars (Ghost reads `database__*`,
+# `mail__*`, `url` from the environment when NODE_ENV=production).
+services:
+  ghost:
+    # Built & published by .github/workflows/townbrief-image.yml (pull from GHCR),
+    # or build locally with deploy/build-image.sh and set GHOST_IMAGE=townbrief-ghost:local
+    image: ${GHOST_IMAGE:-ghcr.io/davevwatkins/ghost:latest}
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      url: ${GHOST_URL}
+      database__client: mysql
+      database__connection__host: mysql
+      database__connection__user: ${MYSQL_USER}
+      database__connection__password: ${MYSQL_PASSWORD}
+      database__connection__database: ${MYSQL_DATABASE}
+      # Transactional mail (member magic-link login, staff invites).
+      # NOTE: bulk newsletters require a Mailgun account configured in Ghost Admin.
+      mail__transport: SMTP
+      mail__from: ${MAIL_FROM}
+      mail__options__host: ${SMTP_HOST}
+      mail__options__port: ${SMTP_PORT}
+      mail__options__auth__user: ${SMTP_USER}
+      mail__options__auth__pass: ${SMTP_PASS}
+    volumes:
+      - ghost-content:/home/ghost/content
+    # No published ports — Caddy reverse-proxies to it on the internal network.
+
+  mysql:
+    image: mysql:8.4
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command: ["--innodb-buffer-pool-size=256M"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  caddy:
+    image: caddy:2
+    restart: always
+    depends_on: [ghost]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      GHOST_DOMAIN: ${GHOST_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  ghost-content:
+  mysql-data:
+  caddy-data:
+  caddy-config:
