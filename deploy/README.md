@@ -23,18 +23,27 @@ Requires Node 22 + pnpm + Docker. (Don't build on a tiny VPS — the admin build
 
 ---
 
-## B. The server (GoDaddy VPS, or any Ubuntu host)
+## B. The server (DigitalOcean droplet)
 
-GoDaddy product needed: **VPS / "Servers"** (Ubuntu 22.04/24.04). Shared "Web Hosting"
-will NOT work. Minimum sane size: 2 vCPU / 4 GB RAM / 80 GB SSD.
+Create a **plain Ubuntu droplet** — NOT the 1-click "Ghost" Marketplace image (that
+installs stock Ghost, not this fork). amd64, so the CI image works unchanged.
 
-1. **Create the VPS** in GoDaddy → choose Ubuntu → note its **public IPv4**.
+Droplet spec:
+- **Image:** Marketplace → **"Docker on Ubuntu 24.04"** (Docker preinstalled — skips step 4),
+  or plain **Ubuntu 24.04 LTS**.
+- **Plan:** Basic → Regular. **Minimum 2 GB / 1 vCPU / 50 GB ($12/mo).** Avoid the $6/1 GB
+  tier (too little for MySQL 8). 4 GB is comfortable.
+- **Region:** New York (closest to Massachusetts readers).
+- **Auth:** add your SSH key.
+
+1. **Create the droplet** and note its **public IPv4**. (Optional: assign a Reserved IP so
+   the address survives a rebuild — set DNS to the Reserved IP if so.)
 2. **Point DNS** (GoDaddy → Domains → townbrief.com → DNS):
-   - Add an **A record**: host `wayland` → value `<VPS public IP>` → TTL 600.
+   - Add an **A record**: host `wayland` → value `<droplet IP>` → TTL 600.
    - This makes `wayland.townbrief.com` resolve to the server (required before Caddy can
      get an HTTPS cert). Leave the existing `@`/`www` records alone.
-3. **Open the firewall** for ports 22, 80, 443.
-4. **SSH in and install Docker:**
+3. **Open the firewall** for ports 22, 80, 443 (DO Cloud Firewall, or `ufw` on the box).
+4. **SSH in and install Docker** (skip if you used the Docker Marketplace image):
    ```bash
    curl -fsSL https://get.docker.com | sh
    ```
