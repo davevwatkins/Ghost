@@ -17,6 +17,9 @@ services:
     environment:
       NODE_ENV: production
       url: ${GHOST_URL}
+      # Bind all interfaces so Caddy (separate container) can reach Ghost over the network.
+      server__host: "0.0.0.0"
+      server__port: "2368"
       database__client: mysql
       database__connection__host: mysql
       database__connection__user: ${MYSQL_USER}
