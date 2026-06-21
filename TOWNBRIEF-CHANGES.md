@@ -44,3 +44,5 @@ git merge main                          # resolve conflicts using the table belo
 | deploy/build-image.sh | Build the "full" production image locally, mirroring CI. |
 | deploy/README.md | Deploy runbook (GoDaddy VPS + DNS + launch + update). |
 | .github/workflows/townbrief-image.yml | Additive CD — build & push the fork's image to GHCR (doesn't edit upstream ci.yml). |
+| deploy/FLEET.md | Design: one-system multi-town fleet (N instances, one image, one Caddy, shared MySQL). |
+| deploy/SHARED-IDENTITY.md | Design: cross-town one-account SSO + bundled billing layer (no core fork). |
