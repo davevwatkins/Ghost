@@ -46,3 +46,4 @@ git merge main                          # resolve conflicts using the table belo
 | .github/workflows/townbrief-image.yml | Additive CD — build & push the fork's image to GHCR (doesn't edit upstream ci.yml). |
 | deploy/FLEET.md | Design: one-system multi-town fleet (N instances, one image, one Caddy, shared MySQL). |
 | deploy/SHARED-IDENTITY.md | Design: cross-town one-account SSO + bundled billing layer (no core fork). |
+| deploy/fleet/ | Fleet scaffold: towns.json + generate.py + add-town.sh + .env.example + README (one host, many towns; generated compose/Caddyfile gitignored). |

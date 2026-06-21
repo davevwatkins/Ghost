@@ -1,0 +1,13 @@
+{
+  "domainBase": "townbrief.com",
+  "acmeEmail": "dave@townbrief.com",
+  "towns": [
+    {
+      "slug": "wayland",
+      "name": "WaylandeNews",
+      "subdomain": "wayland",
+      "dbName": "ghost",
+      "dbUser": "ghost"
+    }
+  ]
+}
