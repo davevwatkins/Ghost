@@ -1,3 +1,16 @@
+/* TownBrief: pull in the shared Tailwind v4 design system so the stats
+   build embeds the utility classes its components use. Without these
+   imports, Vite's vite-plugin-css-injected-by-js only embeds the local
+   rules below, leaving the app rendered but unstyled. The @source
+   directives are paths relative to this file (apps/stats/src/styles/),
+   telling Tailwind which sources to scan for class usage. */
+
+@source "../**/*.{ts,tsx}";
+@source "../../../shade/src/**/*.{ts,tsx}";
+@source "../../../admin-x-design-system/src/**/*.{ts,tsx}";
+
+@import "@tryghost/shade/styles.css";
+
 .admin-x-base.shade-stats {
     animation-name: none;
 }

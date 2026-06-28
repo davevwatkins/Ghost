@@ -1,3 +1,4 @@
+import tailwindcss from '@tailwindcss/vite';
 import adminXViteConfig from '@tryghost/admin-x-framework/vite';
 import pkg from './package.json';
 import svgr from 'vite-plugin-svgr';
@@ -11,6 +12,14 @@ export default (function viteConfig() {
         ],
         entry: resolve(__dirname, 'src/index.tsx'),
         overrides: {
+            // TownBrief: Tailwind v4's Vite plugin must be added via
+            // `overrides.plugins` because adminXViteConfig's signature only
+            // accepts {packageName, entry, overrides} — a top-level `plugins`
+            // is silently dropped. mergeConfig() concatenates plugin arrays,
+            // so tailwindcss() ends up alongside the framework's defaults
+            // (svgr, react, externalPlugin, cssInjectedByJsPlugin). Without
+            // this, the stats app builds successfully but renders unstyled.
+            plugins: [tailwindcss()],
             test: {
                 include: [
                     './test/unit/**/*',
