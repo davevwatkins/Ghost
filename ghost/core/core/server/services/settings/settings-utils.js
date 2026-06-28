@@ -30,37 +30,40 @@ function hideValueIfSecret(setting) {
     return setting;
 }
 
-// Cached site UUID to ensure consistency
-let SITE_UUID;
 /**
- * @description Get or generate a site UUID, used for seeding the site_uuid setting
- * Uses the configured site_uuid if valid, otherwise generates a new one
- * To get the `site_uuid` setting, use `settingsCache.get('site_uuid')` instead
+ * @description Get or generate a site UUID, used for seeding the site_uuid setting.
+ * Uses the configured site_uuid if valid, otherwise generates a fresh random UUID.
+ * To get the `site_uuid` setting, use `settingsCache.get('site_uuid')` instead.
+ *
+ * TownBrief multitenancy: this function used to memoise a single UUID at the
+ * module/process level. Because one Ghost process serves many sites, that cache
+ * handed the SAME uuid to every site that asked — breaking Tinybird analytics
+ * isolation. The cache is removed so a fresh UUID is generated on each call.
+ * `config.site_uuid` (if set) is still honoured; in a multitenant install it
+ * effectively pins only one site's value, which is the intended semantic.
+ *
  * @returns {string} lowercase UUID
  */
 function getOrGenerateSiteUuid() {
-    if (!SITE_UUID) {
-        try {
-            let configuredSiteUuid = config.get('site_uuid');
-            if (configuredSiteUuid && validator.isUUID(configuredSiteUuid)) {
-                SITE_UUID = configuredSiteUuid.toLowerCase();
-                logging.info(`Setting site_uuid to configured value: ${SITE_UUID}`);
-            } else {
-                SITE_UUID = crypto.randomUUID();
-                logging.info(`Configured site_uuid was not found or invalid. Setting site_uuid to a new value: ${SITE_UUID}`);
-            }
-        } catch (error) {
-            logging.error('Error getting site UUID from config. Setting site_uuid to a new value', error);
-            SITE_UUID = crypto.randomUUID();
+    try {
+        const configuredSiteUuid = config.get('site_uuid');
+        if (configuredSiteUuid && validator.isUUID(configuredSiteUuid)) {
+            const value = configuredSiteUuid.toLowerCase();
+            logging.info(`Setting site_uuid to configured value: ${value}`);
+            return value;
         }
+        const value = crypto.randomUUID();
+        logging.info(`Configured site_uuid was not found or invalid. Setting site_uuid to a new value: ${value}`);
+        return value;
+    } catch (error) {
+        logging.error('Error getting site UUID from config. Setting site_uuid to a new value', error);
+        return crypto.randomUUID();
     }
-    return SITE_UUID.toLowerCase();
 }
 
-// Reset function for testing
-getOrGenerateSiteUuid._reset = () => {
-    SITE_UUID = undefined;
-};
+// Retained for backward compatibility with tests that called the former
+// cache-reset helper. The cache no longer exists, so this is a no-op.
+getOrGenerateSiteUuid._reset = () => {};
 
 module.exports = {
     obfuscatedSetting,

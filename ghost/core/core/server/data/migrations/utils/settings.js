@@ -8,7 +8,10 @@ const MIGRATION_USER = 1;
  * Creates a migration which will insert a new setting in settings table
  * @param {object} settingSpec - setting type and group
  * @param {string} settingSpec.key - settings key
- * @param {*} settingSpec.value - settings value
+ * @param {* | (() => *)} settingSpec.value - settings value, or a factory
+ *   function evaluated at migration run-time. Pass a function for any value
+ *   that must be freshly generated per run (e.g. a random UUID) so it is not
+ *   captured once at module load and reused across calls.
  * @param {'array' | 'string' | 'number' | 'boolean' | 'object'} settingSpec.type - settings type
  * @param {string} settingSpec.group - settings group
  * @param {'PUBLIC' | 'RO' | 'PUBLIC,RO'} [settingSpec.flags] - settings flag
@@ -28,10 +31,16 @@ function addSetting({key, value, type, group, flags = null}) {
             logging.info(`Adding setting: ${key}`);
             const now = connection.raw('CURRENT_TIMESTAMP');
 
+            // Resolve a factory value at run-time. This avoids the footgun of
+            // capturing a memoised value (e.g. settings-utils' cached
+            // site_uuid) once at module load and inserting the identical value
+            // on every call.
+            const resolvedValue = typeof value === 'function' ? value() : value;
+
             const data = {
                 id: ObjectId().toHexString(),
                 key,
-                value,
+                value: resolvedValue,
                 group,
                 type,
                 flags,

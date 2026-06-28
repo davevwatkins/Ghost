@@ -133,17 +133,37 @@ describe('Unit: services/settings/settings-utils', function () {
             assert.equal(result, '550e8400-e29b-41d4-a716-446655440000');
         });
 
-        it('caches the UUID and returns same value on subsequent calls', function () {
+        it('returns the configured UUID on every call when config is set', function () {
+            // When config.site_uuid is set, the function is deterministic: the
+            // same configured value is returned each call (no caching needed
+            // because the source is itself stable).
             const testUuid = '550e8400-e29b-41d4-a716-446655440000';
             configGetStub.withArgs('site_uuid').returns(testUuid);
 
             const result1 = getOrGenerateSiteUuid();
             const result2 = getOrGenerateSiteUuid();
 
-            assert.equal(result1, result2);
             assert.equal(result1, testUuid.toLowerCase());
-            // Config should only be called once due to caching
-            sinon.assert.calledOnce(configGetStub);
+            assert.equal(result2, testUuid.toLowerCase());
+        });
+
+        it('generates a FRESH UUID on every call when config is not set (no cross-site cache)', function () {
+            // Multitenancy contract: one Ghost process serves many sites, so
+            // memoising a single UUID at module scope would hand the same
+            // value to every site. Each call must yield a new UUID.
+            configGetStub.withArgs('site_uuid').returns(null);
+
+            const result1 = getOrGenerateSiteUuid();
+            const result2 = getOrGenerateSiteUuid();
+            const result3 = getOrGenerateSiteUuid();
+
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+            assert.match(result1, uuidRegex);
+            assert.match(result2, uuidRegex);
+            assert.match(result3, uuidRegex);
+            assert.notEqual(result1, result2, 'consecutive calls must not return the same UUID');
+            assert.notEqual(result2, result3, 'consecutive calls must not return the same UUID');
+            assert.notEqual(result1, result3, 'consecutive calls must not return the same UUID');
         });
     });
 });

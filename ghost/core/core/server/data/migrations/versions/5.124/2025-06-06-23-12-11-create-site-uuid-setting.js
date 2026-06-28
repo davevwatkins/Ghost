@@ -9,7 +9,12 @@ const {getOrGenerateSiteUuid} = require('../../../../services/settings/settings-
 
 module.exports = addSetting({
     key: 'site_uuid',
-    value: getOrGenerateSiteUuid(),
+    // Pass a factory (not `getOrGenerateSiteUuid()`) so the value is resolved
+    // when the migration actually runs, rather than captured once at module
+    // load. settings-utils memoises a single UUID per process, so capturing it
+    // at load time caused every site that ran this migration in the same
+    // process to insert the identical site_uuid.
+    value: () => getOrGenerateSiteUuid(),
     type: 'string',
     group: 'core',
     flags: 'PUBLIC,RO'
