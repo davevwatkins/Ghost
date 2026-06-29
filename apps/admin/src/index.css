@@ -93,6 +93,25 @@
     overflow-wrap: anywhere;
 }
 
+/* admin-x-settings layout: explicit desktop override so the sidebar column
+ * collapses to its 240px basis on first paint, without depending on the
+ * Tailwind `tablet:` variant being generated/applied before React renders.
+ * Without this, a hard refresh on /#/settings briefly leaves the sidebar in
+ * its mobile (`position: fixed; inset-x: 0`) state which covers the right
+ * pane. Mirrors the desktop branch of the inline Tailwind classes. */
+@media (min-width: 860px) {
+    #admin-x-settings-sidebar-scroller {
+        position: relative;
+        inset-inline: auto;
+        top: auto;
+        height: 100%;
+        /* Don't grow — fixed 240px column with the content panel taking the rest. */
+        flex: 0 1 240px;
+        overflow-y: scroll;
+        padding-block: 0;
+    }
+}
+
 /* Base layout - grid structure for alerts and main content */
 body.react-admin {
     height: 100svh;

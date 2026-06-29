@@ -523,9 +523,12 @@ async function getTables(transaction = db.knex) {
     if (client === 'sqlite3') {
         const response = await transaction.raw('select * from sqlite_master where type = "table"');
         return _.reject(_.map(response, 'tbl_name'), name => name === 'sqlite_sequence');
-    } else if (client === 'mysql2') {
-        const response = await transaction.raw('show full tables where Table_type = \'BASE TABLE\'');
-        return _.map(response[0], entry => _.values(entry)[0]);
+    } else if (client === 'pg') {
+        // TownBrief multitenancy: pg replaces mysql2 as the production engine.
+        const response = await transaction.raw(
+            "select tablename from pg_tables where schemaname = current_schema()"
+        );
+        return _.map(response.rows, 'tablename');
     }
 
     return Promise.reject(tpl(messages.noSupportForDatabase, {client: client}));
@@ -541,9 +544,12 @@ async function getIndexes(table, transaction = db.knex) {
     if (client === 'sqlite3') {
         const response = await transaction.raw(`pragma index_list("${table}")`);
         return _.flatten(_.map(response, 'name'));
-    } else if (client === 'mysql2') {
-        const response = await transaction.raw(`SHOW INDEXES from ${table}`);
-        return _.flatten(_.map(response[0], 'Key_name'));
+    } else if (client === 'pg') {
+        const response = await transaction.raw(
+            "select indexname from pg_indexes where schemaname = current_schema() and tablename = ?",
+            [table]
+        );
+        return _.map(response.rows, 'indexname');
     }
 
     return Promise.reject(tpl(messages.noSupportForDatabase, {client: client}));
@@ -559,9 +565,12 @@ async function getColumns(table, transaction = db.knex) {
     if (client === 'sqlite3') {
         const response = await transaction.raw(`pragma table_info("${table}")`);
         return _.flatten(_.map(response, 'name'));
-    } else if (client === 'mysql2') {
-        const response = await transaction.raw(`SHOW COLUMNS from ${table}`);
-        return _.flatten(_.map(response[0], 'Field'));
+    } else if (client === 'pg') {
+        const response = await transaction.raw(
+            "select column_name from information_schema.columns where table_schema = current_schema() and table_name = ?",
+            [table]
+        );
+        return _.map(response.rows, 'column_name');
     }
 
     return Promise.reject(tpl(messages.noSupportForDatabase, {client: client}));

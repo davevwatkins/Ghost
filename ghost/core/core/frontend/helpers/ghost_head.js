@@ -258,6 +258,9 @@ module.exports = async function ghost_head(options) { // eslint-disable-line cam
     const excludeList = new Set(options?.hash?.exclude?.split(',') || []);
     const head = [];
     const dataRoot = options.data.root;
+    if (!dataRoot._locals) {
+        return;
+    }
     const context = dataRoot._locals.context ? dataRoot._locals.context : null;
     const safeVersion = dataRoot._locals.safeVersion;
     const postCodeInjection = dataRoot && dataRoot.post ? dataRoot.post.codeinjection_head : null;

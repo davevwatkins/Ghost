@@ -1,0 +1,70 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+deleted file mode 100644
+index 6033d6b84d30e56d6fe6f40b7c7c6b18430a5594..0000000000000000000000000000000000000000
+diff --git a/lib/database.js b/lib/database.js
+index b755b9ecb8ee47c71af8b432d9a09f7a5d88d649..ed551665cc234b4a5c59eed08eb8cc3e850a70ab 100644
+--- a/lib/database.js
++++ b/lib/database.js
+@@ -108,7 +108,16 @@ exports.createDatabaseIfNotExist = function createDatabaseIfNotExist(dbConfig) {
+     // @NOTE: Skip, because sqlite3 is a file based database.
+     if (DatabaseInfo.isSQLiteConfig(dbConfig)) {
+         return Promise.resolve();
+-    } else if (!DatabaseInfo.isMySQLConfig(dbConfig)) {
++    }
++    // TownBrief multitenancy: Postgres. The DB is provisioned outside of
++    // knex-migrator (docker compose POSTGRES_DB env, ops scripts in prod),
++    // so we treat the database as always-present here. If the connection
++    // is bad, the next step (createMigrationsTable -> hasTable) will fail
++    // with a clean error.
++    if (dbConfig.client === 'pg' || dbConfig.client === 'postgres' || dbConfig.client === 'postgresql') {
++        return Promise.resolve();
++    }
++    if (!DatabaseInfo.isMySQLConfig(dbConfig)) {
+         return Promise.reject(new errors.KnexMigrateError({
+             message: 'Database is not supported.'
+         }));
+diff --git a/lib/index.js b/lib/index.js
+index b32e657b4cf37e24cfd9c62a0374be227a63e479..ac27bff1d9cc58162ca7698619c4508cc6d7176e 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1199,7 +1199,8 @@ KnexMigrator.prototype._integrityCheck = async function _integrityCheck(options)
+         }
+ 
+         // CASE: database does not exist
+-        if (err.errno === 1049) {
++        // MySQL: errno 1049. Postgres: SQLSTATE 3D000. TownBrief added pg.
++        if (err.errno === 1049 || err.code === '3D000') {
+             throw new errors.DatabaseIsNotOkError({
+                 message: 'Please run `yarn knex-migrator init`',
+                 code: 'DB_NOT_INITIALISED'
+@@ -1207,7 +1208,8 @@ KnexMigrator.prototype._integrityCheck = async function _integrityCheck(options)
+         }
+ 
+         // CASE: migration table does not exist
+-        if (err.errno === 1 || err.errno === 1146) {
++        // MySQL: errno 1 / 1146. Postgres: SQLSTATE 42P01. TownBrief added pg.
++        if (err.errno === 1 || err.errno === 1146 || err.code === '42P01') {
+             throw new errors.DatabaseIsNotOkError({
+                 message: 'Please run `yarn knex-migrator init`',
+                 code: 'MIGRATION_TABLE_IS_MISSING'
+diff --git a/migrations/add-primary-key-to-lock-table.js b/migrations/add-primary-key-to-lock-table.js
+index c0a73e84dac7537e4df6bbda64f46e2e0a8efbe1..75308ef3193cf1e8dfa84d6afd4067e0c289ddb2 100644
+--- a/migrations/add-primary-key-to-lock-table.js
++++ b/migrations/add-primary-key-to-lock-table.js
+@@ -37,7 +37,9 @@ function addPrimaryKey(tableName, columns, knex) {
+     return knex.schema.table(tableName, function (table) {
+         table.primary(columns);
+     }).catch((err) => {
+-        if (err.code === 'ER_MULTIPLE_PRI_KEY') {
++        // TownBrief: also tolerate Postgres SQLSTATE 42P16 ("multiple primary
++        // keys for table"). Upstream only catches MySQL's ER_MULTIPLE_PRI_KEY.
++        if (err.code === 'ER_MULTIPLE_PRI_KEY' || err.code === '42P16') {
+             debug(`Primary key constraint for: ${columns} already exists for table: ${tableName}`);
+             return;
+         }
+diff --git a/test/config/env/config.testing-mysql.json b/test/config/env/config.testing-mysql.json
+deleted file mode 100644
+index eab0ded0a4146c9d2d651431860551bd42765c15..0000000000000000000000000000000000000000
+diff --git a/test/config/env/config.testing.json b/test/config/env/config.testing.json
+deleted file mode 100644
+index 12dd3b137f597dee03fb912413643b42bc5a0da0..0000000000000000000000000000000000000000

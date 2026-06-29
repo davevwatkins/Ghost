@@ -7,7 +7,9 @@ import { useCurrentUser } from "@tryghost/admin-x-framework/api/current-user";
 import { useBrowseSettings } from "@tryghost/admin-x-framework/api/settings";
 import { getSettingValue } from "@tryghost/admin-x-framework/api/settings";
 import { hasAdminAccess } from "@tryghost/admin-x-framework/api/users";
-import { useNotificationsCountForUser } from "@tryghost/activitypub/api";
+// TownBrief multitenancy: ActivityPub disabled for the local dev preview
+// (matches stub in routes.tsx). Returns zero unread so the badge stays hidden.
+const useNotificationsCountForUser = (_userSlug: string, _enabled: boolean) => ({ data: 0 });
 import NetworkIcon from "./icons/network-icon";
 import { NavMenuItem } from "./nav-menu-item";
 import { useIsActiveLink } from "./use-is-active-link";

@@ -44,6 +44,11 @@ ghostBookshelf.plugin(require('./plugins/actions'));
 
 ghostBookshelf.plugin(require('./plugins/events'));
 
+// TownBrief multitenancy: auto-scope every model query to the active
+// site_id (from AsyncLocalStorage). Order matters — register AFTER events
+// so the standard hooks fire first; our scoping runs additively alongside.
+ghostBookshelf.plugin(require('./plugins/multitenancy'));
+
 ghostBookshelf.plugin(require('./plugins/raw-knex'));
 
 ghostBookshelf.plugin(require('./plugins/sanitize'));

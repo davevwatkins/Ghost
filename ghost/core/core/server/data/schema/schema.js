@@ -9,13 +9,28 @@
  * Long text = length 1,000,000,000
  */
 module.exports = {
+    // TownBrief multitenancy: one Ghost process serves N sites, each row in
+    // every other table carries a site_id pointing here. See deploy/MULTITENANCY.md.
+    sites: {
+        id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        slug: {type: 'string', maxlength: 191, nullable: false},
+        name: {type: 'string', maxlength: 191, nullable: false},
+        host: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        custom_domain: {type: 'string', maxlength: 191, nullable: true, unique: true},
+        status: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'active', validations: {isIn: [['active', 'suspended', 'archived']]}},
+        stripe_account_id: {type: 'string', maxlength: 191, nullable: true},
+        mailgun_from: {type: 'string', maxlength: 191, nullable: true},
+        created_at: {type: 'dateTime', nullable: false},
+        updated_at: {type: 'dateTime', nullable: true}
+    },
     newsletters: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         uuid: {type: 'string', maxlength: 36, nullable: false, unique: true, validations: {isUUID: true}},
-        name: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        name: {type: 'string', maxlength: 191, nullable: false},
         description: {type: 'string', maxlength: 2000, nullable: true},
         feedback_enabled: {type: 'boolean', nullable: false, defaultTo: false},
-        slug: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        slug: {type: 'string', maxlength: 191, nullable: false},
         sender_name: {type: 'string', maxlength: 191, nullable: true},
         sender_email: {type: 'string', maxlength: 191, nullable: true},
         sender_reply_to: {type: 'string', maxlength: 191, nullable: false, defaultTo: 'newsletter'},
@@ -57,10 +72,15 @@ module.exports = {
         section_title_color: {type: 'string', maxlength: 50, nullable: true},
         divider_color: {type: 'string', maxlength: 50, nullable: true},
         button_color: {type: 'string', maxlength: 50, nullable: true, defaultTo: 'accent'},
-        link_color: {type: 'string', maxlength: 50, nullable: true, defaultTo: 'accent'}
+        link_color: {type: 'string', maxlength: 50, nullable: true, defaultTo: 'accent'},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'name'], ['site_id', 'slug']]
     },
     posts: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        // TownBrief multitenancy: site_id scopes every row to a tenant.
+        // Phase 3 Bookshelf override auto-injects WHERE site_id and stamps
+        // on insert. Default keeps single-tenant legacy data working.
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         uuid: {type: 'string', maxlength: 36, nullable: false, index: true, validations: {isUUID: true}},
         title: {type: 'string', maxlength: 2000, nullable: false, validations: {isLength: {max: 255}}},
         slug: {type: 'string', maxlength: 191, nullable: false},
@@ -101,11 +121,12 @@ module.exports = {
             ['type','status','updated_at']
         ],
         '@@UNIQUE_CONSTRAINTS@@': [
-            ['slug', 'type']
+            ['site_id', 'slug', 'type']
         ]
     },
     posts_meta: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         post_id: {type: 'string', maxlength: 24, nullable: false, references: 'posts.id', unique: true},
         og_image: {type: 'string', maxlength: 2000, nullable: true},
         og_title: {type: 'string', maxlength: 300, nullable: true},
@@ -124,10 +145,20 @@ module.exports = {
     // NOTE: this is the staff table
     users: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
+        // TownBrief Phase 5: marks a user as cross-site superadmin. A
+        // superadmin user can access the admin UI of ANY site and pick
+        // between them via the site picker. Per-site users only see
+        // their own site (the one their row belongs to via site_id).
+        // TownBrief Phase 5: nullable so Bookshelf inserts (which pass
+        // null for columns not in the model attribute set) don't violate
+        // NOT NULL. App code treats NULL and false equivalently —
+        // only `=== true` grants superadmin.
+        is_superadmin: {type: 'boolean', nullable: true, defaultTo: false},
         name: {type: 'string', maxlength: 191, nullable: false},
-        slug: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        slug: {type: 'string', maxlength: 191, nullable: false},
         password: {type: 'string', maxlength: 60, nullable: false},
-        email: {type: 'string', maxlength: 191, nullable: false, unique: true, validations: {isEmail: true}},
+        email: {type: 'string', maxlength: 191, nullable: false, validations: {isEmail: true}},
         profile_image: {type: 'string', maxlength: 2000, nullable: true},
         cover_image: {type: 'string', maxlength: 2000, nullable: true},
         bio: {type: 'text', maxlength: 65535, nullable: true, validations: {isLength: {max: 250}}},
@@ -184,47 +215,57 @@ module.exports = {
         donation_notifications: {type: 'boolean', nullable: false, defaultTo: true},
         gift_subscription_notifications: {type: 'boolean', nullable: false, defaultTo: true},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'slug'], ['site_id', 'email']]
     },
     posts_authors: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         post_id: {type: 'string', maxlength: 24, nullable: false, references: 'posts.id'},
         author_id: {type: 'string', maxlength: 24, nullable: false, references: 'users.id'},
         sort_order: {type: 'integer', nullable: false, unsigned: true, defaultTo: 0}
     },
     roles: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
-        name: {type: 'string', maxlength: 50, nullable: false, unique: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
+        name: {type: 'string', maxlength: 50, nullable: false},
         description: {type: 'string', maxlength: 2000, nullable: true},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'name']]
     },
     roles_users: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         role_id: {type: 'string', maxlength: 24, nullable: false},
         user_id: {type: 'string', maxlength: 24, nullable: false}
     },
     permissions: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
-        name: {type: 'string', maxlength: 50, nullable: false, unique: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
+        name: {type: 'string', maxlength: 50, nullable: false},
         object_type: {type: 'string', maxlength: 50, nullable: false},
         action_type: {type: 'string', maxlength: 50, nullable: false},
         object_id: {type: 'string', maxlength: 24, nullable: true},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'name']]
     },
     permissions_users: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         user_id: {type: 'string', maxlength: 24, nullable: false},
         permission_id: {type: 'string', maxlength: 24, nullable: false}
     },
     permissions_roles: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         role_id: {type: 'string', maxlength: 24, nullable: false},
         permission_id: {type: 'string', maxlength: 24, nullable: false}
     },
     settings: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         group: {
             type: 'string',
             maxlength: 50,
@@ -246,7 +287,10 @@ module.exports = {
                 ]]
             }
         },
-        key: {type: 'string', maxlength: 50, nullable: false, unique: true},
+        // TownBrief multitenancy: key was single-column unique; now composite
+        // (site_id, key) so the same setting key can exist for every site.
+        // See @@INDEXES@@ entry below.
+        key: {type: 'string', maxlength: 50, nullable: false},
         // NOTE: as JSON objects are no longer stored in `value` we could potentially reduce the maxlength
         value: {type: 'text', maxlength: 65535, nullable: true},
         type: {
@@ -265,12 +309,19 @@ module.exports = {
         },
         flags: {type: 'string', maxlength: 50, nullable: true},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        // TownBrief multitenancy Phase 2b (settings-table-specific):
+        // same key (e.g. 'title') must exist for every site, so unique
+        // is composite on (site_id, key) instead of plain `key`.
+        '@@UNIQUE_CONSTRAINTS@@': [
+            ['site_id', 'key']
+        ]
     },
     tags: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         name: {type: 'string', maxlength: 191, nullable: false, validations: {matches: /^([^,]|$)/}},
-        slug: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        slug: {type: 'string', maxlength: 191, nullable: false},
         description: {type: 'text', maxlength: 65535, nullable: true, validations: {isLength: {max: 500}}},
         feature_image: {type: 'string', maxlength: 2000, nullable: true},
         parent_id: {type: 'string', nullable: true},
@@ -294,10 +345,12 @@ module.exports = {
         canonical_url: {type: 'string', maxlength: 2000, nullable: true},
         accent_color: {type: 'string', maxlength: 50, nullable: true},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'slug']]
     },
     posts_tags: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         post_id: {type: 'string', maxlength: 24, nullable: false, references: 'posts.id'},
         tag_id: {type: 'string', maxlength: 24, nullable: false, references: 'tags.id'},
         sort_order: {type: 'integer', nullable: false, unsigned: true, defaultTo: 0},
@@ -307,6 +360,7 @@ module.exports = {
     },
     invites: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         role_id: {type: 'string', maxlength: 24, nullable: false},
         status: {
             type: 'string',
@@ -316,10 +370,11 @@ module.exports = {
             validations: {isIn: [['pending', 'sent']]}
         },
         token: {type: 'string', maxlength: 191, nullable: false, unique: true},
-        email: {type: 'string', maxlength: 191, nullable: false, unique: true, validations: {isEmail: true}},
+        email: {type: 'string', maxlength: 191, nullable: false, validations: {isEmail: true}},
         expires: {type: 'bigInteger', nullable: false},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'email']]
     },
     brute: {
         key: {type: 'string', maxlength: 191, primary: true},
@@ -330,6 +385,7 @@ module.exports = {
     },
     sessions: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         session_id: {type: 'string', maxlength: 32, nullable: false, unique: true},
         user_id: {type: 'string', maxlength: 24, nullable: false},
         session_data: {type: 'string', maxlength: 2000, nullable: false},
@@ -338,6 +394,7 @@ module.exports = {
     },
     integrations: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         type: {
             type: 'string',
             maxlength: 50,
@@ -346,14 +403,16 @@ module.exports = {
             validations: {isIn: [['internal', 'builtin', 'custom', 'core']]}
         },
         name: {type: 'string', maxlength: 191, nullable: false},
-        slug: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        slug: {type: 'string', maxlength: 191, nullable: false},
         icon_image: {type: 'string', maxlength: 2000, nullable: true},
         description: {type: 'string', maxlength: 2000, nullable: true},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'slug']]
     },
     webhooks: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         event: {type: 'string', maxlength: 50, nullable: false, validations: {isLowercase: true}},
         target_url: {type: 'string', maxlength: 2000, nullable: false},
         name: {type: 'string', maxlength: 191, nullable: true},
@@ -372,6 +431,7 @@ module.exports = {
     },
     api_keys: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         type: {
             type: 'string',
             maxlength: 50,
@@ -396,6 +456,7 @@ module.exports = {
     },
     mobiledoc_revisions: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         post_id: {type: 'string', maxlength: 24, nullable: false, index: true},
         mobiledoc: {type: 'text', maxlength: 1000000000, fieldtype: 'long', nullable: true},
         created_at_ts: {type: 'bigInteger', nullable: false},
@@ -403,6 +464,7 @@ module.exports = {
     },
     post_revisions: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         post_id: {type: 'string', maxlength: 24, nullable: false, index: true},
         lexical: {type: 'text', maxlength: 1000000000, fieldtype: 'long', nullable: true},
         created_at_ts: {type: 'bigInteger', nullable: false},
@@ -418,9 +480,10 @@ module.exports = {
     },
     members: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         uuid: {type: 'string', maxlength: 36, nullable: false, unique: true, validations: {isUUID: true}},
         transient_id: {type: 'string', maxlength: 191, nullable: false, unique: true},
-        email: {type: 'string', maxlength: 191, nullable: false, unique: true, validations: {isEmail: true}},
+        email: {type: 'string', maxlength: 191, nullable: false, validations: {isEmail: true}},
         status: {
             type: 'string', maxlength: 50, nullable: false, defaultTo: 'free', validations: {
                 isIn: [['free', 'paid', 'comped', 'gift']]
@@ -448,8 +511,9 @@ module.exports = {
     // NOTE: this is the tiers table
     products: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         name: {type: 'string', maxlength: 191, nullable: false},
-        slug: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        slug: {type: 'string', maxlength: 191, nullable: false},
         // @deprecated: use a status enum with isIn validation, not an `active` boolean
         active: {type: 'boolean', nullable: false, defaultTo: true},
         welcome_page_url: {type: 'string', maxlength: 2000, nullable: true},
@@ -478,14 +542,16 @@ module.exports = {
         updated_at: {type: 'dateTime', nullable: true},
         // To be removed in future
         monthly_price_id: {type: 'string', maxlength: 24, nullable: true},
-        yearly_price_id: {type: 'string', maxlength: 24, nullable: true}
+        yearly_price_id: {type: 'string', maxlength: 24, nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'slug']]
     },
     offers: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         // @deprecated: use a status enum with isIn validation, not an `active` boolean
         active: {type: 'boolean', nullable: false, defaultTo: true},
-        name: {type: 'string', maxlength: 191, nullable: false, unique: true},
-        code: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        name: {type: 'string', maxlength: 191, nullable: false},
+        code: {type: 'string', maxlength: 191, nullable: false},
         product_id: {type: 'string', maxlength: 24, nullable: true, references: 'products.id'},
         stripe_coupon_id: {type: 'string', maxlength: 255, nullable: true, unique: true},
         interval: {type: 'string', maxlength: 50, nullable: false, validations: {isIn: [['month', 'year']]}},
@@ -498,23 +564,28 @@ module.exports = {
         portal_description: {type: 'string', maxlength: 2000, nullable: true},
         redemption_type: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'signup', validations: {isIn: [['signup', 'retention']]}},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'name'], ['site_id', 'code']]
     },
     benefits: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         name: {type: 'string', maxlength: 191, nullable: false},
-        slug: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        slug: {type: 'string', maxlength: 191, nullable: false},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'slug']]
     },
     products_benefits: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         product_id: {type: 'string', maxlength: 24, nullable: false, references: 'products.id', cascadeDelete: true},
         benefit_id: {type: 'string', maxlength: 24, nullable: false, references: 'benefits.id', cascadeDelete: true},
         sort_order: {type: 'integer', nullable: false, unsigned: true, defaultTo: 0}
     },
     members_products: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         product_id: {type: 'string', maxlength: 24, nullable: false, references: 'products.id', cascadeDelete: true},
         sort_order: {type: 'integer', nullable: false, unsigned: true, defaultTo: 0},
@@ -522,12 +593,14 @@ module.exports = {
     },
     posts_products: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         post_id: {type: 'string', maxlength: 24, nullable: false, references: 'posts.id', cascadeDelete: true},
         product_id: {type: 'string', maxlength: 24, nullable: false, references: 'products.id', cascadeDelete: true},
         sort_order: {type: 'integer', nullable: false, unsigned: true, defaultTo: 0}
     },
     members_created_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         created_at: {type: 'dateTime', nullable: false},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         // attribution values from ghost-history (member attribution tracking script)
@@ -557,12 +630,14 @@ module.exports = {
     },
     members_cancel_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         from_plan: {type: 'string', maxlength: 255, nullable: false},
         created_at: {type: 'dateTime', nullable: false}
     },
     members_payment_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         amount: {type: 'integer', nullable: false},
         // @note: this is longer than originally intended due to a bug - https://github.com/TryGhost/Ghost/pull/15606
@@ -573,11 +648,13 @@ module.exports = {
     },
     members_login_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         created_at: {type: 'dateTime', nullable: false}
     },
     members_email_change_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         to_email: {type: 'string', maxlength: 191, nullable: false, unique: false, validations: {isEmail: true}},
         from_email: {type: 'string', maxlength: 191, nullable: false, unique: false, validations: {isEmail: true}},
@@ -585,6 +662,7 @@ module.exports = {
     },
     members_status_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         from_status: {
             type: 'string', maxlength: 50, nullable: true, validations: {
@@ -601,6 +679,7 @@ module.exports = {
     },
     members_product_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         product_id: {type: 'string', maxlength: 24, nullable: false, references: 'products.id', cascadeDelete: false},
         action: {
@@ -612,6 +691,7 @@ module.exports = {
     },
     members_paid_subscription_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         type: {type: 'string', maxlength: 50, nullable: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         subscription_id: {type: 'string', maxlength: 24, nullable: true},
@@ -630,19 +710,23 @@ module.exports = {
     },
     labels: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
-        name: {type: 'string', maxlength: 191, nullable: false, unique: true},
-        slug: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
+        name: {type: 'string', maxlength: 191, nullable: false},
+        slug: {type: 'string', maxlength: 191, nullable: false},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'name'], ['site_id', 'slug']]
     },
     members_labels: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         label_id: {type: 'string', maxlength: 24, nullable: false, references: 'labels.id', cascadeDelete: true},
         sort_order: {type: 'integer', nullable: false, unsigned: true, defaultTo: 0}
     },
     members_stripe_customers: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, unique: false, references: 'members.id', cascadeDelete: true},
         customer_id: {type: 'string', maxlength: 255, nullable: false, unique: true},
         name: {type: 'string', maxlength: 191, nullable: true},
@@ -652,6 +736,7 @@ module.exports = {
     },
     subscriptions: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         type: {
             type: 'string', maxlength: 50, nullable: false, validations: {
                 isIn: [['free', 'comped', 'paid']]
@@ -689,6 +774,7 @@ module.exports = {
     },
     members_stripe_customers_subscriptions: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         customer_id: {type: 'string', maxlength: 255, nullable: false, unique: false, references: 'members_stripe_customers.customer_id', cascadeDelete: true},
         ghost_subscription_id: {type: 'string', maxlength: 24, nullable: true, references: 'subscriptions.id', constraintName: 'mscs_ghost_subscription_id_foreign', cascadeDelete: true},
         subscription_id: {type: 'string', maxlength: 255, nullable: false, unique: true},
@@ -718,10 +804,12 @@ module.exports = {
     },
     members_current_subscription: {
         member_id: {type: 'string', maxlength: 24, nullable: false, primary: true, references: 'members.id', cascadeDelete: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         subscription_id: {type: 'string', maxlength: 24, nullable: false, unique: true, references: 'members_stripe_customers_subscriptions.id', cascadeDelete: true}
     },
     members_subscription_created_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         created_at: {type: 'dateTime', nullable: false},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         subscription_id: {type: 'string', maxlength: 24, nullable: false, references: 'members_stripe_customers_subscriptions.id', cascadeDelete: true},
@@ -747,6 +835,7 @@ module.exports = {
     },
     offer_redemptions: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         offer_id: {type: 'string', maxlength: 24, nullable: false, references: 'offers.id', cascadeDelete: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         subscription_id: {type: 'string', maxlength: 24, nullable: false, references: 'members_stripe_customers_subscriptions.id', cascadeDelete: true},
@@ -754,6 +843,7 @@ module.exports = {
     },
     members_subscribe_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, unique: false, references: 'members.id', cascadeDelete: true},
         subscribed: {type: 'boolean', nullable: false, defaultTo: true},
         created_at: {type: 'dateTime', nullable: false},
@@ -769,6 +859,7 @@ module.exports = {
     },
     donation_payment_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         name: {type: 'string', maxlength: 191, nullable: true},
         email: {type: 'string', maxlength: 191, nullable: false, unique: false, validations: {isEmail: true}},
         member_id: {type: 'string', maxlength: 24, nullable: true, unique: false, references: 'members.id', setNullDelete: true},
@@ -797,6 +888,7 @@ module.exports = {
     },
     stripe_products: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         product_id: {type: 'string', maxlength: 24, nullable: true, unique: false, references: 'products.id'},
         stripe_product_id: {type: 'string', maxlength: 255, nullable: false, unique: true},
         created_at: {type: 'dateTime', nullable: false},
@@ -804,6 +896,7 @@ module.exports = {
     },
     stripe_prices: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         stripe_price_id: {type: 'string', maxlength: 255, nullable: false, unique: true},
         stripe_product_id: {type: 'string', maxlength: 255, nullable: false, unique: false, references: 'stripe_products.stripe_product_id'},
         active: {type: 'boolean', nullable: false},
@@ -820,6 +913,7 @@ module.exports = {
     },
     actions: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         resource_id: {type: 'string', maxlength: 24, nullable: true},
         resource_type: {type: 'string', maxlength: 50, nullable: false},
         actor_id: {type: 'string', maxlength: 24, nullable: false},
@@ -833,6 +927,7 @@ module.exports = {
     },
     emails: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         post_id: {type: 'string', maxlength: 24, nullable: false, index: true, unique: true},
         uuid: {type: 'string', maxlength: 36, nullable: false, validations: {isUUID: true}},
         status: {
@@ -877,6 +972,7 @@ module.exports = {
     },
     email_batches: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         email_id: {type: 'string', maxlength: 24, nullable: false, references: 'emails.id'},
         provider_id: {type: 'string', maxlength: 255, nullable: true},
         fallback_sending_domain: {type: 'boolean', nullable: false, defaultTo: false},
@@ -896,6 +992,7 @@ module.exports = {
     },
     email_recipients: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         email_id: {type: 'string', maxlength: 24, nullable: false, references: 'emails.id'},
         member_id: {type: 'string', maxlength: 24, nullable: false, index: true},
         batch_id: {type: 'string', maxlength: 24, nullable: false, references: 'email_batches.id'},
@@ -915,6 +1012,7 @@ module.exports = {
     },
     email_recipient_failures: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         email_id: {type: 'string', maxlength: 24, nullable: false, references: 'emails.id'},
         member_id: {type: 'string', maxlength: 24, nullable: true},
         email_recipient_id: {type: 'string', maxlength: 24, nullable: false, references: 'email_recipients.id'},
@@ -933,6 +1031,7 @@ module.exports = {
     },
     tokens: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         token: {type: 'string', maxlength: 32, nullable: false, index: true},
         uuid: {type: 'string', maxlength: 36, nullable: false, unique: true, validations: {isUUID: true}},
         data: {type: 'string', maxlength: 2000, nullable: true},
@@ -944,14 +1043,17 @@ module.exports = {
     },
     snippets: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
-        name: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
+        name: {type: 'string', maxlength: 191, nullable: false},
         mobiledoc: {type: 'text', maxlength: 1000000000, fieldtype: 'long', nullable: false},
         lexical: {type: 'text', maxlength: 1000000000, fieldtype: 'long', nullable: true},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'name']]
     },
     custom_theme_settings: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         theme: {type: 'string', maxlength: 191, nullable: false},
         key: {type: 'string', maxlength: 191, nullable: false},
         type: {
@@ -972,6 +1074,7 @@ module.exports = {
     },
     members_newsletters: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         newsletter_id: {type: 'string', maxlength: 24, nullable: false, references: 'newsletters.id', cascadeDelete: true},
         '@@INDEXES@@': [
@@ -980,6 +1083,7 @@ module.exports = {
     },
     comments: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         post_id: {type: 'string', maxlength: 24, nullable: false, unique: false, references: 'posts.id', cascadeDelete: true},
         member_id: {type: 'string', maxlength: 24, nullable: true, unique: false, references: 'members.id', setNullDelete: true},
         parent_id: {type: 'string', maxlength: 24, nullable: true, unique: false, references: 'comments.id', cascadeDelete: true},
@@ -996,6 +1100,7 @@ module.exports = {
     },
     comment_likes: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         comment_id: {type: 'string', maxlength: 24, nullable: false, unique: false, references: 'comments.id', cascadeDelete: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, unique: false, references: 'members.id', cascadeDelete: true},
         score: {type: 'integer', nullable: false, defaultTo: 1},
@@ -1004,6 +1109,7 @@ module.exports = {
     },
     comment_reports: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         comment_id: {type: 'string', maxlength: 24, nullable: false, unique: false, references: 'comments.id', cascadeDelete: true},
         member_id: {type: 'string', maxlength: 24, nullable: true, unique: false, references: 'members.id', setNullDelete: true},
         created_at: {type: 'dateTime', nullable: false},
@@ -1011,17 +1117,20 @@ module.exports = {
     },
     jobs: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
-        name: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
+        name: {type: 'string', maxlength: 191, nullable: false},
         status: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'queued', validations: {isIn: [['started', 'finished', 'failed', 'queued']]}},
         started_at: {type: 'dateTime', nullable: true},
         finished_at: {type: 'dateTime', nullable: true},
         created_at: {type: 'dateTime', nullable: false},
         updated_at: {type: 'dateTime', nullable: true},
         metadata: {type: 'string', maxlength: 2000, nullable: true},
-        queue_entry: {type: 'integer', nullable: true, unsigned: true}
+        queue_entry: {type: 'integer', nullable: true, unsigned: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'name']]
     },
     redirects: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         from: {type: 'string', maxlength: 191, nullable: false, index: true},
         to: {type: 'string', maxlength: 2000, nullable: false},
         post_id: {type: 'string', maxlength: 24, nullable: true, unique: false, references: 'posts.id', setNullDelete: true},
@@ -1030,12 +1139,14 @@ module.exports = {
     },
     members_click_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         redirect_id: {type: 'string', maxlength: 24, nullable: false, references: 'redirects.id', cascadeDelete: true},
         created_at: {type: 'dateTime', nullable: false}
     },
     members_feedback: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         score: {type: 'integer', nullable: false, unsigned: true, defaultTo: 0},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         post_id: {type: 'string', maxlength: 24, nullable: false, references: 'posts.id', cascadeDelete: true},
@@ -1044,7 +1155,8 @@ module.exports = {
     },
     suppressions: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
-        email: {type: 'string', maxlength: 191, nullable: false, unique: true, validations: {isEmail: true}},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
+        email: {type: 'string', maxlength: 191, nullable: false, validations: {isEmail: true}},
         email_id: {type: 'string', maxlength: 24, nullable: true, references: 'emails.id'},
         reason: {
             type: 'string',
@@ -1057,10 +1169,12 @@ module.exports = {
                 ]]
             }
         },
-        created_at: {type: 'dateTime', nullable: false}
+        created_at: {type: 'dateTime', nullable: false},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'email']]
     },
     email_spam_complaint_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', cascadeDelete: true},
         email_id: {type: 'string', maxlength: 24, nullable: false, references: 'emails.id'},
         email_address: {type: 'string', maxlength: 191, nullable: false, unique: false, validations: {isEmail: true}},
@@ -1071,6 +1185,7 @@ module.exports = {
     },
     mentions: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         source: {type: 'string', maxlength: 2000, nullable: false},
         source_title: {type: 'string', maxlength: 2000, nullable: true},
         source_site_title: {type: 'string', maxlength: 2000, nullable: true},
@@ -1089,6 +1204,7 @@ module.exports = {
     },
     milestones: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         type: {type: 'string', maxlength: 24, nullable: false},
         value: {type: 'integer', nullable: false},
         currency: {type: 'string', maxlength: 24, nullable: true},
@@ -1097,23 +1213,27 @@ module.exports = {
     },
     collections: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         title: {type: 'string', maxlength: 191, nullable: false},
-        slug: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        slug: {type: 'string', maxlength: 191, nullable: false},
         description: {type: 'string', maxlength: 2000, nullable: true},
         type: {type: 'string', maxlength: 50, nullable: false},
         filter: {type: 'text', maxlength: 1000000000, nullable: true},
         feature_image: {type: 'string', maxlength: 2000, nullable: true},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'slug']]
     },
     collections_posts: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         collection_id: {type: 'string', maxlength: 24, nullable: false, references: 'collections.id', cascadeDelete: true},
         post_id: {type: 'string', maxlength: 24, nullable: false, references: 'posts.id', cascadeDelete: true},
         sort_order: {type: 'integer', nullable: false, unsigned: true, defaultTo: 0}
     },
     recommendations: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         url: {type: 'string', maxlength: 2000, nullable: false},
         title: {type: 'string', maxlength: 2000, nullable: false},
         excerpt: {type: 'string', maxlength: 2000, nullable: true},
@@ -1126,18 +1246,21 @@ module.exports = {
     },
     recommendation_click_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         recommendation_id: {type: 'string', maxlength: 24, nullable: false, references: 'recommendations.id', unique: false, cascadeDelete: true},
         member_id: {type: 'string', maxlength: 24, nullable: true, references: 'members.id', unique: false, setNullDelete: true},
         created_at: {type: 'dateTime', nullable: false}
     },
     recommendation_subscribe_events: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         recommendation_id: {type: 'string', maxlength: 24, nullable: false, references: 'recommendations.id', unique: false, cascadeDelete: true},
         member_id: {type: 'string', maxlength: 24, nullable: true, references: 'members.id', unique: false, setNullDelete: true},
         created_at: {type: 'dateTime', nullable: false}
     },
     outbox: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         event_type: {type: 'string', maxlength: 50, nullable: false},
         status: {
             type: 'string',
@@ -1158,7 +1281,8 @@ module.exports = {
     },
     email_design_settings: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
-        slug: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
+        slug: {type: 'string', maxlength: 191, nullable: false},
         background_color: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'light'},
         header_background_color: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'transparent'},
         header_image: {type: 'string', maxlength: 2000, nullable: true},
@@ -1182,18 +1306,22 @@ module.exports = {
         sender_email: {type: 'string', maxlength: 191, nullable: true, validations: {isEmail: true}},
         sender_reply_to: {type: 'string', maxlength: 191, nullable: true, validations: {isEmail: true}},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'slug']]
     },
     automations: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         status: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'inactive', validations: {isIn: [['active', 'inactive']]}},
-        name: {type: 'string', maxlength: 191, nullable: false, unique: true},
-        slug: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        name: {type: 'string', maxlength: 191, nullable: false},
+        slug: {type: 'string', maxlength: 191, nullable: false},
         created_at: {type: 'dateTime', nullable: false},
-        updated_at: {type: 'dateTime', nullable: true}
+        updated_at: {type: 'dateTime', nullable: true},
+        '@@UNIQUE_CONSTRAINTS@@': [['site_id', 'name'], ['site_id', 'slug']]
     },
     welcome_email_automated_emails: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         welcome_email_automation_id: {type: 'string', maxlength: 24, nullable: false, references: 'automations.id', constraintName: 'weae_automation_id_foreign', cascadeDelete: true},
         next_welcome_email_automated_email_id: {type: 'string', maxlength: 24, nullable: true, references: 'welcome_email_automated_emails.id', constraintName: 'weae_next_email_id_foreign', cascadeDelete: false},
         delay_days: {type: 'integer', nullable: false, unsigned: true},
@@ -1208,6 +1336,7 @@ module.exports = {
     },
     welcome_email_automation_runs: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         welcome_email_automation_id: {type: 'string', maxlength: 24, nullable: false, references: 'automations.id', constraintName: 'wear_automation_id_foreign', cascadeDelete: true},
         member_id: {type: 'string', maxlength: 24, nullable: false, references: 'members.id', constraintName: 'wear_member_id_foreign', cascadeDelete: true},
         next_welcome_email_automated_email_id: {type: 'string', maxlength: 24, nullable: true, references: 'welcome_email_automated_emails.id', constraintName: 'wear_next_email_id_foreign', cascadeDelete: false},
@@ -1223,6 +1352,7 @@ module.exports = {
     },
     automated_email_recipients: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         automated_email_id: {type: 'string', maxlength: 24, nullable: true, references: 'welcome_email_automated_emails.id'},
         member_id: {type: 'string', maxlength: 24, nullable: false, index: true},
         member_uuid: {type: 'string', maxlength: 36, nullable: false},
@@ -1233,6 +1363,7 @@ module.exports = {
     },
     gifts: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        site_id: {type: 'string', maxlength: 24, nullable: false, defaultTo: 'default0000000000000000', references: 'sites.id', index: true},
         token: {type: 'string', maxlength: 48, nullable: false, unique: true},
 
         buyer_email: {type: 'string', maxlength: 191, nullable: false, validations: {isEmail: true}},

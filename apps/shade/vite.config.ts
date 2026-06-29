@@ -32,13 +32,13 @@ export default (function viteConfig() {
             outDir: 'es',
             lib: {
                 formats: ['es'],
-                entry: globSync(resolve(__dirname, 'src/**/*.{ts,tsx}')).reduce((entries, libpath) => {
+                entry: globSync('src/**/*.{ts,tsx}', {cwd: __dirname, posix: true}).reduce((entries, libpath) => {
                     if (libpath.includes('.stories.') || libpath.endsWith('.d.ts')) {
                         return entries;
                     }
 
-                    const outPath = libpath.replace(resolve(__dirname, 'src') + '/', '').replace(/\.(ts|tsx)$/, '');
-                    entries[outPath] = libpath;
+                    const outPath = libpath.replace(/^src\//, '').replace(/\.(ts|tsx)$/, '');
+                    entries[outPath] = resolve(__dirname, libpath);
                     return entries;
                 }, {} as Record<string, string>)
             },
@@ -59,7 +59,13 @@ export default (function viteConfig() {
                         return true;
                     }
 
-                    return !source.includes(__dirname);
+                    // Windows-safe local-source check (same pattern as
+                    // admin-x-framework — see its Phase 0.5 note).
+                    const srcAbs = source.replace(/\\/g, '/');
+                    const dirAbs = __dirname.replace(/\\/g, '/');
+                    if (srcAbs.includes(dirAbs)) return false;
+                    if (srcAbs.startsWith('src/') || srcAbs.startsWith('/src/')) return false;
+                    return true;
                 }
             }
         },

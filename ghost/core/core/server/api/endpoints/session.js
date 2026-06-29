@@ -62,7 +62,33 @@ const controller = {
         });
     },
     delete() {
-        return Promise.resolve(function logoutSessionMw(req, res, next) {
+        return Promise.resolve(async function logoutSessionMw(req, res, next) {
+            try {
+                // TownBrief multitenancy Phase 5d.2: propagate sign-out
+                // across all sites this superadmin has touched. The
+                // session table holds `(site_id, user_id, session_id)`;
+                // each peer site has its own mirror user_id, so we
+                // sweep sessions by EMAIL across all sites.
+                const sessionUserId = req.session && req.session.user_id;
+                if (sessionUserId) {
+                    const db = require('../../data/db');
+                    const {runWithoutSite} = require('../../services/multitenancy/current-site');
+                    await runWithoutSite(async () => {
+                        const me = await db.knex('users').where('id', sessionUserId).first('email', 'is_superadmin');
+                        if (me && me.is_superadmin) {
+                            const mirrorUsers = await db.knex('users').where('email', me.email).select('id');
+                            const ids = mirrorUsers.map(u => u.id);
+                            if (ids.length) {
+                                await db.knex('sessions').whereIn('user_id', ids).del();
+                            }
+                        }
+                    });
+                }
+            } catch (err) {
+                // Swallow — propagation is best-effort. Local logout
+                // still proceeds so the user's current tab signs out.
+                require('@tryghost/logging').warn(`Cross-site signout propagation failed: ${err.message}`);
+            }
             auth.session.logout(req, res, next);
         });
     },

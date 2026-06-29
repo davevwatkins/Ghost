@@ -9,6 +9,16 @@ const errors = require('@tryghost/errors');
 const urlUtils = require('../../../shared/url-utils');
 const StorageBase = require('ghost-storage-base');
 
+function getCurrentSiteSlug() {
+    try {
+        const {getCurrentSite} = require('../../services/multitenancy/current-site');
+        const site = getCurrentSite();
+        return (site && site.slug) ? site.slug : null;
+    } catch {
+        return null;
+    }
+}
+
 const messages = {
     notFound: 'File not found',
     notFoundWithRef: 'File not found: {file}',
@@ -119,9 +129,16 @@ class LocalStorageBase extends StorageBase {
     async save(file, targetDir) {
         let targetFilename;
 
+        // Per-site image isolation: store under <storagePath>/<slug>/...
+        // so each site's uploads are namespaced. The URL returned uses the
+        // path WITHOUT the slug prefix; serve() re-injects it at request time.
+        const slug = getCurrentSiteSlug();
+        const siteStoragePath = slug ? path.join(this.storagePath, slug) : this.storagePath;
+
         targetDir = targetDir
-            ? this._resolveAndValidateStoragePath(targetDir)
-            : this.getTargetDir(this.storagePath);
+            ? path.join(siteStoragePath, path.relative(this.storagePath,
+                this._resolveAndValidateStoragePath(targetDir)))
+            : this.getTargetDir(siteStoragePath);
 
         const filename = await this.getUniqueFileName(file, targetDir);
 
@@ -138,13 +155,13 @@ class LocalStorageBase extends StorageBase {
             throw err;
         }
 
-        // The src for the image must be in URI format, not a file system path, which in Windows uses \
-        // For local file system storage can use relative path so add a slash
+        // Return URL relative to the SHARED storagePath (no slug prefix) so
+        // __GHOST_URL__ links stay portable across sites.
         const fullUrl = (
             urlUtils.urlJoin('/',
                 urlUtils.getSubdir(),
                 this.staticFileURLPrefix,
-                path.relative(this.storagePath, targetFilename))
+                path.relative(siteStoragePath, targetFilename))
         ).replace(new RegExp(`\\${path.sep}`, 'g'), '/');
 
         return fullUrl;
@@ -157,13 +174,14 @@ class LocalStorageBase extends StorageBase {
      * @returns {Promise<String>} a URL to retrieve the data
      */
     async saveRaw(buffer, targetPath) {
-        const storagePath = path.join(this.storagePath, this._normalizeStorageRelativePath(targetPath));
+        const slug = getCurrentSiteSlug();
+        const siteStoragePath = slug ? path.join(this.storagePath, slug) : this.storagePath;
+        const storagePath = path.join(siteStoragePath, this._normalizeStorageRelativePath(targetPath));
         const targetDir = path.dirname(storagePath);
 
         await fs.mkdirs(targetDir);
         await fs.writeFile(storagePath, buffer);
 
-        // For local file system storage can use relative path so add a slash
         const fullUrl = (
             urlUtils.urlJoin('/', urlUtils.getSubdir(),
                 this.staticFileURLPrefix,
@@ -215,8 +233,20 @@ class LocalStorageBase extends StorageBase {
             if (err instanceof errors.IncorrectUsageError) {
                 return false;
             }
-
             throw err;
+        }
+
+        // Check per-site path first, then shared fallback
+        const slug = getCurrentSiteSlug();
+        if (slug) {
+            const rel = path.relative(this.storagePath, filePath);
+            const perSitePath = path.join(this.storagePath, slug, rel);
+            try {
+                await fs.stat(perSitePath);
+                return true;
+            } catch {
+                // fall through to shared check
+            }
         }
 
         try {
@@ -232,45 +262,68 @@ class LocalStorageBase extends StorageBase {
      * Fallthrough: false ensures that if an image isn't found, it automatically 404s
      * Wrap server static errors
      *
+     * Per-site isolation: tries <storagePath>/<site-slug>/ first, then falls
+     * back to <storagePath>/ for legacy/shared files.
+     *
      * @returns {serveStaticContent}
      */
     serve() {
         const {storagePath, errorMessages} = this;
+        const perSiteHandlers = new Map();
+
+        const getPerSiteHandler = (slug) => {
+            if (!perSiteHandlers.has(slug)) {
+                perSiteHandlers.set(slug, serveStatic(
+                    path.join(storagePath, slug),
+                    {maxAge: 365 * 24 * 60 * 60 * 1000, fallthrough: false}
+                ));
+            }
+            return perSiteHandlers.get(slug);
+        };
+
+        const sharedHandler = serveStatic(storagePath, {
+            maxAge: 365 * 24 * 60 * 60 * 1000,
+            fallthrough: false
+        });
+
+        function mapError(err, next) {
+            if (!err) {
+                return next();
+            }
+            if (err.statusCode === 404) {
+                return next(new errors.NotFoundError({
+                    message: tpl(errorMessages.notFound),
+                    code: 'STATIC_FILE_NOT_FOUND',
+                    property: err.path
+                }));
+            }
+            if (err.statusCode === 400) {
+                return next(new errors.BadRequestError({err}));
+            }
+            if (err.statusCode === 403) {
+                return next(new errors.NoPermissionError({err}));
+            }
+            if (err.name === 'RangeNotSatisfiableError') {
+                return next(new errors.RangeNotSatisfiableError({err}));
+            }
+            return next(new errors.InternalServerError({err}));
+        }
 
         return function serveStaticContent(req, res, next) {
-            return serveStatic(
-                storagePath,
-                {
-                    maxAge: (365 * 24 * 60 * 60 * 1000), // 1 year in ms
-                    fallthrough: false
-                }
-            )(req, res, (err) => {
-                if (err) {
-                    if (err.statusCode === 404) {
-                        return next(new errors.NotFoundError({
-                            message: tpl(errorMessages.notFound),
-                            code: 'STATIC_FILE_NOT_FOUND',
-                            property: err.path
-                        }));
+            const slug = getCurrentSiteSlug();
+
+            if (slug) {
+                getPerSiteHandler(slug)(req, res, (err) => {
+                    if (err && err.statusCode === 404) {
+                        // Not in per-site dir — fall back to shared (legacy/bootstrap files)
+                        sharedHandler(req, res, err2 => mapError(err2, next));
+                    } else {
+                        mapError(err, next);
                     }
-
-                    if (err.statusCode === 400) {
-                        return next(new errors.BadRequestError({err: err}));
-                    }
-
-                    if (err.statusCode === 403) {
-                        return next(new errors.NoPermissionError({err: err}));
-                    }
-
-                    if (err.name === 'RangeNotSatisfiableError') {
-                        return next(new errors.RangeNotSatisfiableError({err}));
-                    }
-
-                    return next(new errors.InternalServerError({err: err}));
-                }
-
-                next();
-            });
+                });
+            } else {
+                sharedHandler(req, res, err => mapError(err, next));
+            }
         };
     }
 
@@ -280,6 +333,17 @@ class LocalStorageBase extends StorageBase {
      */
     async delete(fileName, targetDir) {
         const filePath = this._resolveAndValidateStoragePath(targetDir, fileName);
+        const slug = getCurrentSiteSlug();
+        if (slug) {
+            const rel = path.relative(this.storagePath, filePath);
+            const perSitePath = path.join(this.storagePath, slug, rel);
+            try {
+                await fs.stat(perSitePath);
+                return await fs.remove(perSitePath);
+            } catch {
+                // fall through to shared path
+            }
+        }
         return await fs.remove(filePath);
     }
 
@@ -293,31 +357,42 @@ class LocalStorageBase extends StorageBase {
         options = options || {};
 
         const normalizedPath = this._normalizeStorageRelativePath(options.path);
-        const targetPath = path.join(this.storagePath, normalizedPath);
+        const slug = getCurrentSiteSlug();
 
-        try {
-            return await fs.readFile(targetPath);
-        } catch (err) {
-            if (err.code === 'ENOENT' || err.code === 'ENOTDIR') {
-                throw new errors.NotFoundError({
-                    err: err,
-                    message: tpl(this.errorMessages.notFoundWithRef, {file: options.path})
-                });
+        const tryRead = async (targetPath) => {
+            try {
+                return await fs.readFile(targetPath);
+            } catch (err) {
+                if (err.code === 'ENOENT' || err.code === 'ENOTDIR') {
+                    return null;
+                }
+                if (err.code === 'ENAMETOOLONG') {
+                    throw new errors.BadRequestError({err});
+                }
+                if (err.code === 'EACCES') {
+                    throw new errors.NoPermissionError({err});
+                }
+                throw new errors.InternalServerError({err, message: tpl(this.errorMessages.cannotRead, {file: options.path})});
             }
+        };
 
-            if (err.code === 'ENAMETOOLONG') {
-                throw new errors.BadRequestError({err: err});
+        if (slug) {
+            const perSitePath = path.join(this.storagePath, slug, normalizedPath);
+            const data = await tryRead(perSitePath);
+            if (data !== null) {
+                return data;
             }
-
-            if (err.code === 'EACCES') {
-                throw new errors.NoPermissionError({err: err});
-            }
-
-            throw new errors.InternalServerError({
-                err: err,
-                message: tpl(this.errorMessages.cannotRead, {file: options.path})
-            });
         }
+
+        const sharedPath = path.join(this.storagePath, normalizedPath);
+        const data = await tryRead(sharedPath);
+        if (data !== null) {
+            return data;
+        }
+
+        throw new errors.NotFoundError({
+            message: tpl(this.errorMessages.notFoundWithRef, {file: options.path})
+        });
     }
 }
 

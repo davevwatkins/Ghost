@@ -31,27 +31,42 @@ class TagsImporter extends BaseImporter {
      *   - so if you import a tag slug "test" and the same tag slug exists, it would add "test-2"
      *   - that's why we add a protection here to first find the tag
      *
-     * @TODO: Add a flag to the base implementation e.g. `fetchBeforeAdd`
+     * Wraps findOne+add in a SAVEPOINT so a Postgres constraint violation in add()
+     * doesn't abort the transaction and fail the next iteration's findOne().
      */
     async doImport(options, importOptions) {
         debug('doImport', this.modelName, this.dataToImport.length);
 
         let ops = [];
 
-        _.each(this.dataToImport, (obj) => {
+        _.each(this.dataToImport, (obj, index) => {
             ops.push(async () => {
-                if (obj.slug) {
-                    const tag = await models[this.modelName].findOne({slug: obj.slug}, options);
-                    if (tag) {
-                        return;
-                    }
-                }
+                const trx = options.transacting;
+                const spName = trx ? `sp_tags_${index}` : null;
 
                 try {
+                    if (spName) {
+                        await trx.raw(`SAVEPOINT ${spName}`);
+                    }
+
+                    if (obj.slug) {
+                        const tag = await models[this.modelName].findOne({slug: obj.slug}, options);
+                        if (tag) {
+                            if (spName) {
+                                await trx.raw(`RELEASE SAVEPOINT ${spName}`);
+                            }
+                            return;
+                        }
+                    }
+
                     const importedModel = await models[this.modelName].add(obj, options);
                     obj.model = {
                         id: importedModel.id
                     };
+
+                    if (spName) {
+                        await trx.raw(`RELEASE SAVEPOINT ${spName}`);
+                    }
 
                     if (importOptions.returnImportedData) {
                         this.importedDataToReturn.push(importedModel.toJSON());
@@ -65,6 +80,16 @@ class TagsImporter extends BaseImporter {
                         originalSlug: obj.slug
                     });
                 } catch (err) {
+                    if (spName) {
+                        // Postgres aborts the transaction on constraint violations.
+                        // ROLLBACK TO SAVEPOINT is allowed in aborted state and clears it.
+                        try {
+                            await trx.raw(`ROLLBACK TO SAVEPOINT ${spName}`);
+                            await trx.raw(`RELEASE SAVEPOINT ${spName}`);
+                        } catch (spErr) {
+                            debug('savepoint rollback failed', spErr.message);
+                        }
+                    }
                     this.handleError(err, obj);
                 }
             });

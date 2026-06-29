@@ -1,1 +1,12 @@
-/* Styles are provided by the admin app's CSS build via @tryghost/shade */
+/* TownBrief: pull in the shared Tailwind v4 design system so the posts
+   build embeds the utility classes its components use. Without these
+   imports, Vite's vite-plugin-css-injected-by-js only embeds @xyflow's
+   react-flow styles, leaving the app rendered but unstyled. The @source
+   directives are paths relative to this file (apps/posts/src/styles/),
+   telling Tailwind which sources to scan for class usage. */
+
+@source "../**/*.{ts,tsx}";
+@source "../../../shade/src/**/*.{ts,tsx}";
+@source "../../../admin-x-design-system/src/**/*.{ts,tsx}";
+
+@import "@tryghost/shade/styles.css";

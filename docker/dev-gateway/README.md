@@ -7,6 +7,21 @@ The Caddy reverse proxy container:
 2. **Proxies asset requests** to local dev servers running on the host
 3. **Enables hot-reload** for frontend development without rebuilding Ghost
 
+## Required host dev servers
+
+The gateway proxies several paths to dev servers it expects to find on the host (via `host.docker.internal`). The most important one is the React admin shell:
+
+- **`apps/admin` (port 5174)** — REQUIRED for the admin UI. Without this running, `/ghost/` returns 502 and the admin sidebar / React routes (`/#/analytics`, `/#/posts/analytics/:id`, `/#/settings`) won't render.
+
+  ```sh
+  cd apps/admin
+  pnpm dev
+  ```
+
+  This serves a combined index.html that loads both the Ember admin and the React shell ([apps/admin/vite-ember-assets.ts](../../apps/admin/vite-ember-assets.ts)). The shell wraps React routes in the sidebar layout ([apps/admin/src/layout/admin-layout.tsx](../../apps/admin/src/layout/admin-layout.tsx)).
+
+Other host dev servers (Portal, Comments, Signup, etc.) are optional — Caddy falls back to Ghost's built assets when they're not running.
+
 ## Configuration
 ### Environment Variables
 Caddy uses environment variables (set in `compose.dev.yaml`) to configure proxy targets:

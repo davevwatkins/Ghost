@@ -23,30 +23,54 @@ class CustomThemeSettingsImporter extends BaseImporter {
 
         let ops = [];
 
-        _.each(this.dataToImport, (item) => {
+        _.each(this.dataToImport, (item, index) => {
             ops.push(async () => {
-                const setting = await models.CustomThemeSetting.findOne({theme: item.theme, key: item.key}, options);
-                if (_.isObject(item.value)) {
-                    item.value = JSON.stringify(item.value);
-                }
-
-                if (setting) {
-                    setting.set('value', item.value);
-                }
-
-                if (setting && !setting.hasChanged()) {
-                    return;
-                }
+                const trx = options.transacting;
+                const spName = trx ? `sp_cts_${index}` : null;
 
                 try {
+                    if (spName) {
+                        await trx.raw(`SAVEPOINT ${spName}`);
+                    }
+
+                    const setting = await models.CustomThemeSetting.findOne({theme: item.theme, key: item.key}, options);
+                    if (_.isObject(item.value)) {
+                        item.value = JSON.stringify(item.value);
+                    }
+
+                    if (setting) {
+                        setting.set('value', item.value);
+                    }
+
+                    if (setting && !setting.hasChanged()) {
+                        if (spName) {
+                            await trx.raw(`RELEASE SAVEPOINT ${spName}`);
+                        }
+                        return;
+                    }
+
                     const importedModel = setting
                         ? await setting.save(null, options)
                         : await models.CustomThemeSetting.add(item, options);
+
+                    if (spName) {
+                        await trx.raw(`RELEASE SAVEPOINT ${spName}`);
+                    }
 
                     if (importOptions.returnImportedData) {
                         this.importedDataToReturn.push(importedModel.toJSON());
                     }
                 } catch (err) {
+                    if (spName) {
+                        // Postgres aborts the transaction on constraint violations.
+                        // ROLLBACK TO SAVEPOINT is allowed in aborted state and clears it.
+                        try {
+                            await trx.raw(`ROLLBACK TO SAVEPOINT ${spName}`);
+                            await trx.raw(`RELEASE SAVEPOINT ${spName}`);
+                        } catch (spErr) {
+                            debug('savepoint rollback failed', spErr.message);
+                        }
+                    }
                     this.handleError(err, item);
                 }
             });

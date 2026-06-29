@@ -26,13 +26,15 @@ export default (function viteConfig() {
             outDir: 'dist',
             lib: {
                 formats: ['es', 'cjs'],
-                entry: globSync(resolve(__dirname, 'src/**/*.{ts,tsx}')).reduce((entries, libpath) => {
+                entry: globSync('src/**/*.{ts,tsx}', {cwd: __dirname, posix: true}).reduce((entries, libpath) => {
                     if (libpath.endsWith('.d.ts')) {
                         return entries;
                     }
 
-                    const outPath = libpath.replace(resolve(__dirname, 'src') + '/', '').replace(/\.(ts|tsx)$/, '');
-                    entries[outPath] = libpath;
+                    // libpath is a posix-style relative path like 'src/api/sites.ts'.
+                    // outPath is 'api/sites' (no extension, no leading src/).
+                    const outPath = libpath.replace(/^src\//, '').replace(/\.(ts|tsx)$/, '');
+                    entries[outPath] = resolve(__dirname, libpath);
                     return entries;
                 }, {} as Record<string, string>)
             },
@@ -49,7 +51,16 @@ export default (function viteConfig() {
                         return true;
                     }
 
-                    return !source.includes(__dirname);
+                    // Normalize both sides to forward-slash for Windows
+                    // comparison — `source` rollup passes in is sometimes
+                    // a relative posix path like `src/foo.ts` and other
+                    // times an absolute Windows path. `__dirname` here
+                    // is always native (backslash) on Windows.
+                    const srcAbs = source.replace(/\\/g, '/');
+                    const dirAbs = __dirname.replace(/\\/g, '/');
+                    if (srcAbs.includes(dirAbs)) return false;
+                    if (srcAbs.startsWith('src/') || srcAbs.startsWith('/src/')) return false;
+                    return true;
                 }
             }
         },

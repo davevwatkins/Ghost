@@ -2,6 +2,43 @@ const EventProcessingResult = require('./event-processing-result');
 const logging = require('@tryghost/logging');
 const errors = require('@tryghost/errors');
 
+// TownBrief multitenancy Phase 8b: every Mailgun event references an
+// emailId (Ghost-side emails table). We look up the email's site_id
+// and wrap each event's processing in runWithSite() so downstream
+// side-effects (member status updates → email change events,
+// suppression list writes, audience-feedback calls) compose with the
+// right site's settings cache / URL builder / mail config. Per-batch
+// cache (Map<emailId, siteId>) so the lookup is O(unique emailIds),
+// not O(events). Lazy require to dodge boot-order circularity.
+const DEFAULT_SITE_ID = 'default0000000000000000';
+let _runWithSite;
+let _db;
+function runWithSite(...args) {
+    if (!_runWithSite) _runWithSite = require('../multitenancy/current-site').runWithSite;
+    return _runWithSite(...args);
+}
+function db() {
+    if (!_db) _db = require('../../data/db');
+    return _db;
+}
+
+async function buildSiteIdCache(emailIds) {
+    const cache = new Map();
+    const unique = [...new Set(emailIds.filter(Boolean))];
+    if (!unique.length) return cache;
+    try {
+        const rows = await db().knex('emails')
+            .whereIn('id', unique)
+            .select('id', 'site_id');
+        for (const r of rows) cache.set(r.id, r.site_id || DEFAULT_SITE_ID);
+    } catch (err) {
+        // Email-analytics is best-effort — if the lookup fails, every
+        // event falls back to default site (system scope semantics).
+        logging.warn(`Phase 8b: failed to pre-fetch site_id for email batch: ${err.message}`);
+    }
+    return cache;
+}
+
 /**
  * @typedef {import('../email-service/email-event-processor')} EmailEventProcessor
  */
@@ -537,6 +574,10 @@ module.exports = class EmailAnalyticsService {
     async processEventBatch(events, result, fetchData) {
         const useBatchProcessing = this.config.get('emailAnalytics:batchProcessing');
 
+        // Phase 8b: build the site_id cache for this batch once.
+        const siteIdCache = await buildSiteIdCache(events.map(e => e.emailId));
+        const siteFor = (event) => siteIdCache.get(event.emailId) || DEFAULT_SITE_ID;
+
         if (useBatchProcessing) {
             // Batched mode: pre-fetch all recipients, then process events using cache
             const emailIdentifications = events.map(event => ({
@@ -548,7 +589,10 @@ module.exports = class EmailAnalyticsService {
             const recipientCache = await this.eventProcessor.batchGetRecipients(emailIdentifications);
 
             for (const event of events) {
-                const batchResult = await this.processEvent(event, recipientCache);
+                const batchResult = await runWithSite(
+                    {id: siteFor(event)},
+                    () => this.processEvent(event, recipientCache)
+                );
 
                 // Save last event timestamp
                 if (!fetchData.lastEventTimestamp || (event.timestamp && event.timestamp > fetchData.lastEventTimestamp)) {
@@ -563,7 +607,10 @@ module.exports = class EmailAnalyticsService {
         } else {
             // Sequential mode: process events one by one (original behavior)
             for (const event of events) {
-                const batchResult = await this.processEvent(event);
+                const batchResult = await runWithSite(
+                    {id: siteFor(event)},
+                    () => this.processEvent(event)
+                );
 
                 // Save last event timestamp
                 if (!fetchData.lastEventTimestamp || (event.timestamp && event.timestamp > fetchData.lastEventTimestamp)) {

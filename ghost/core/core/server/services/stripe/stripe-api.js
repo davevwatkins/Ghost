@@ -6,6 +6,48 @@ const ghostConfig = require('../../../shared/config');
 const Stripe = require('stripe').Stripe;
 const {t} = require('../i18n');
 
+// TownBrief multitenancy Phase 4d2: per-request Stripe checkout URLs +
+// site_id metadata. The boot-captured URLs in `this._config.checkoutSession*`
+// are wrong for any request that doesn't belong to the default site —
+// `urlUtils.getSiteUrl()` is per-site at call time (Phase 4b), so build the
+// URLs lazily here. The `townbrief_site_id` metadata lets the shared
+// webhook handler (Phase 7) dispatch events to the right site.
+//
+// Lazy require to dodge the boot-order/circular-dep web that stripe-api
+// loads through.
+let _urlUtils;
+let _getCurrentSiteId;
+function urlUtils() {
+    if (!_urlUtils) _urlUtils = require('../../../shared/url-utils');
+    return _urlUtils;
+}
+function getCurrentSiteId() {
+    if (!_getCurrentSiteId) {
+        try {
+            _getCurrentSiteId = require('../multitenancy/current-site').getCurrentSiteId;
+        } catch (e) { return null; }
+    }
+    return _getCurrentSiteId();
+}
+
+// Build a Stripe redirect URL against the active site at call time.
+// `searchParam` is the `?stripe=success|cancel|...` marker Ghost uses
+// downstream to detect the return.
+function activeSiteUrlWithStripeParam(searchParam) {
+    const siteUrl = urlUtils().getSiteUrl();
+    const u = new URL(siteUrl);
+    u.searchParams.set('stripe', searchParam);
+    return u.href;
+}
+
+// Decorate any outbound metadata object with `townbrief_site_id`. Stripe
+// metadata is a flat string map; values must be strings.
+function stampSiteIdMetadata(metadata) {
+    const siteId = getCurrentSiteId();
+    if (!siteId) return metadata || undefined;
+    return {...(metadata || {}), townbrief_site_id: siteId};
+}
+
 /* Stripe has the following rate limits:
 *  - For most APIs, 100 read requests per second in live mode, 25 read requests per second in test mode
 *  - For search, 20 requests per second in both live and test modes
@@ -387,6 +429,10 @@ module.exports = class StripeAPI {
         debug(`createCustomer(${JSON.stringify(options)})`);
         try {
             await this._rateLimitBucket.throttle();
+            // TownBrief Phase 4d2: stamp townbrief_site_id metadata on every
+            // outbound customer create so the shared webhook handler can
+            // dispatch events to the right site.
+            options = {...options, metadata: stampSiteIdMetadata(options.metadata)};
             const customer = await this._stripe.customers.create(options);
             debug(`createCustomer(${JSON.stringify(options)}) -> Success`);
             return customer;
@@ -567,16 +613,20 @@ module.exports = class StripeAPI {
             subscriptionData.trial_period_days = options.trialDays;
         }
 
+        // TownBrief Phase 4d2: per-request URLs + townbrief_site_id metadata.
+        const successUrl = options.successUrl || activeSiteUrlWithStripeParam('success');
+        const cancelUrl = options.cancelUrl || activeSiteUrlWithStripeParam('cancel');
+        subscriptionData.metadata = stampSiteIdMetadata(subscriptionData.metadata);
         let stripeSessionOptions = {
             payment_method_types: this.PAYMENT_METHOD_TYPES,
-            success_url: options.successUrl || this._config.checkoutSessionSuccessUrl,
-            cancel_url: options.cancelUrl || this._config.checkoutSessionCancelUrl,
+            success_url: successUrl,
+            cancel_url: cancelUrl,
             // @ts-ignore - we need to update to latest stripe library to correctly use newer features
             allow_promotion_codes: discounts ? undefined : this._config.enablePromoCodes,
             automatic_tax: {
                 enabled: this._config.enableAutomaticTax
             },
-            metadata,
+            metadata: stampSiteIdMetadata(metadata),
             discounts,
             /*
             line_items: [{
@@ -634,14 +684,20 @@ module.exports = class StripeAPI {
             ghost_donation: true
         };
 
+        // TownBrief Phase 4d2: same per-request URL + site_id metadata story
+        // for the donation flow. Stamp the invoice_data metadata too — invoices
+        // don't inherit the session metadata.
+        const donationSuccessUrl = successUrl || activeSiteUrlWithStripeParam('success');
+        const donationCancelUrl = cancelUrl || activeSiteUrlWithStripeParam('cancel');
+        const donationMetadata = stampSiteIdMetadata(metadata);
         const stripeSessionOptions = {
             mode: 'payment',
-            success_url: successUrl || this._config.checkoutSessionSuccessUrl,
-            cancel_url: cancelUrl || this._config.checkoutSessionCancelUrl,
+            success_url: donationSuccessUrl,
+            cancel_url: donationCancelUrl,
             automatic_tax: {
                 enabled: this._config.enableAutomaticTax
             },
-            metadata,
+            metadata: donationMetadata,
             customer: customer ? customer.id : undefined,
             customer_email: !customer && customerEmail ? customerEmail : undefined,
             submit_type: 'pay',
@@ -649,7 +705,7 @@ module.exports = class StripeAPI {
                 enabled: true,
                 invoice_data: {
                     // Stripe does not inherit Checkout Session metadata for invoice records
-                    metadata
+                    metadata: donationMetadata
                 }
             },
             line_items: [{
@@ -750,16 +806,19 @@ module.exports = class StripeAPI {
      */
     async createCheckoutSetupSession(customer, options) {
         await this._rateLimitBucket.throttle();
+        // TownBrief Phase 4d2: per-request URLs + site_id metadata.
+        const setupSuccessUrl = options.successUrl || activeSiteUrlWithStripeParam('billing-update-success');
+        const setupCancelUrl = options.cancelUrl || activeSiteUrlWithStripeParam('billing-update-cancel');
         const session = await this._stripe.checkout.sessions.create({
             mode: 'setup',
             payment_method_types: this.PAYMENT_METHOD_TYPES,
-            success_url: options.successUrl || this._config.checkoutSetupSessionSuccessUrl,
-            cancel_url: options.cancelUrl || this._config.checkoutSetupSessionCancelUrl,
+            success_url: setupSuccessUrl,
+            cancel_url: setupCancelUrl,
             customer_email: customer.email,
             setup_intent_data: {
-                metadata: {
+                metadata: stampSiteIdMetadata({
                     customer_id: customer.id
-                }
+                })
             },
 
             // Note: this is required for dynamic payment methods
@@ -783,9 +842,11 @@ module.exports = class StripeAPI {
     async createBillingPortalSession(customer, options) {
         await this._rateLimitBucket.throttle();
 
+        // TownBrief Phase 4d2: per-request return URL.
+        const portalReturnUrl = options.returnUrl || activeSiteUrlWithStripeParam('return');
         const stripeOptions = {
             customer: customer.id,
-            return_url: options.returnUrl || this._config.billingPortalReturnUrl
+            return_url: portalReturnUrl
         };
 
         if (options.configurationId) {
@@ -1080,4 +1141,10 @@ module.exports = class StripeAPI {
         await this._rateLimitBucket.throttle();
         return await this._stripe.billingPortal.configurations.update(id, options);
     }
+};
+
+// Exposed for direct testing of Phase 4d2 helpers; not for general use.
+module.exports.__phase4d2 = {
+    activeSiteUrlWithStripeParam,
+    stampSiteIdMetadata
 };

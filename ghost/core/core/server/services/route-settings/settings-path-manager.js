@@ -37,6 +37,24 @@ class SettingsPathManager {
         return path.join(settingsFolder, `${this.filename}.${this.defaultExtension}`);
     }
 
+    // TownBrief multitenancy Phase 4c4: per-site override file location.
+    // If `content/sites/<slug>/<type>.yaml` exists, that wins; otherwise
+    // the default file location does. Operators can ship custom
+    // routes for a single site by dropping a file at the per-site path
+    // without disturbing the rest of the fleet.
+    //
+    // Returns the per-site path IF the file exists on disk, else null
+    // (caller falls back to getDefaultFilePath()).
+    getPerSiteFilePathIfExists(siteSlug, contentRoot) {
+        if (!siteSlug || !contentRoot) return null;
+        const fs = require('fs');
+        const candidate = path.join(contentRoot, 'sites', siteSlug, `${this.filename}.${this.defaultExtension}`);
+        try {
+            if (fs.existsSync(candidate)) return candidate;
+        } catch (e) { /* swallow */ }
+        return null;
+    }
+
     getBackupFilePath() {
         const settingsFolder = this.defaultPath;
         const dateStamp = format(new Date(), 'yyyy-MM-dd-HH-mm-ss');

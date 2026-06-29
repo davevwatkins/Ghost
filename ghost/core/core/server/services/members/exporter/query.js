@@ -94,12 +94,12 @@ async function createExportStream(options) {
                 // Fetch related data for this batch
                 const [tiers, labels, stripeCustomers, subscriptions, gifts] = await Promise.all([
                     knex('members_products')
-                        .select('member_id', knex.raw('GROUP_CONCAT(product_id) as tiers'))
+                        .select('member_id', knex.raw("string_agg(product_id, ',') as tiers"))
                         .whereIn('member_id', memberIds)
                         .groupBy('member_id'),
-                    
+
                     knex('members_labels')
-                        .select('member_id', knex.raw('GROUP_CONCAT(label_id) as labels'))
+                        .select('member_id', knex.raw("string_agg(label_id, ',') as labels"))
                         .whereIn('member_id', memberIds)
                         .groupBy('member_id'),
                     

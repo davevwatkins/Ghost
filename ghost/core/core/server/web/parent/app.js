@@ -14,6 +14,11 @@ module.exports = function setupParentApp() {
     parentApp.use(mw.requestId);
     parentApp.use(mw.logRequest);
 
+    // TownBrief multitenancy: resolve Host -> site before anything else looks
+    // at the DB. Stamps the active site on req.site AND in AsyncLocalStorage
+    // for downstream Bookshelf models. See deploy/MULTITENANCY.md.
+    parentApp.use(mw.siteResolver);
+
     // Register event emitter on req/res to trigger cache invalidation webhook event
     parentApp.use(mw.emitEvents);
 

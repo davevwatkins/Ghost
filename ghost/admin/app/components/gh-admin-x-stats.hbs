@@ -1,0 +1,6 @@
+{{#if this.AdminXApp}}
+    <div
+        class="gh-admin-x-stats"
+        {{react-render this.AdminXApp props=(hash framework=this.frameworkProps designSystem=this.designSystemProps)}}
+    ></div>
+{{/if}}

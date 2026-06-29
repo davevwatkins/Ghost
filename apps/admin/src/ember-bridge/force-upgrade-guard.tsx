@@ -3,6 +3,10 @@ import { useForceUpgrade } from "./ember-bridge";
 
 export interface RouteHandle {
     allowInForceUpgrade?: boolean;
+    // When true, the AdminLayout suppresses the shell sidebar/nav so the
+    // route can take over the viewport (e.g. /settings/* portals a full-
+    // screen overlay with its own internal nav).
+    fullscreen?: boolean;
 }
 
 /**

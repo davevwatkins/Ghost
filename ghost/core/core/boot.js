@@ -80,6 +80,157 @@ async function initDatabase({config}) {
 
     const databaseInfo = require('./server/data/db/info');
     await databaseInfo.init();
+
+    // TownBrief multitenancy Phase 1.6: ensure the seeded default site
+    // row exists. The versioned migration that does this is a no-op on
+    // fresh `knex-migrator init` (init marks versioned migrations as
+    // applied without running them — by design). A boot-time check is
+    // the reliable place to ensure the default row is present.
+    await ensureDefaultSite();
+
+    // Same gotcha: the Phase 2c RLS migrations also get skipped on
+    // fresh init. Apply RLS idempotently here.
+    await ensureRowLevelSecurity();
+}
+
+async function ensureRowLevelSecurity() {
+    const knex = require('./server/data/db').knex;
+    if (!knex || knex.client.config.client !== 'pg') return;
+    try {
+        const {rows: siteIdTables} = await knex.raw(`
+            SELECT DISTINCT table_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+            AND column_name = 'site_id'
+            ORDER BY table_name
+        `);
+        const tables = siteIdTables.map(r => r.table_name);
+        const logging = require('@tryghost/logging');
+
+        // current_site_id() helper — idempotent CREATE OR REPLACE.
+        await knex.raw(`
+            CREATE OR REPLACE FUNCTION current_site_id()
+                RETURNS varchar(24) LANGUAGE sql STABLE PARALLEL SAFE
+            AS $$
+                SELECT NULLIF(current_setting('app.site_id', true), '')::varchar(24)
+            $$;
+        `);
+
+        let installed = 0;
+        for (const table of tables) {
+            const {rows: state} = await knex.raw(
+                'SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = ?',
+                [table]
+            );
+            if (state[0] && state[0].relrowsecurity && state[0].relforcerowsecurity) continue;
+            await knex.raw(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
+            await knex.raw(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`);
+            await knex.raw(`DROP POLICY IF EXISTS townbrief_site_isolation ON ${table}`);
+            await knex.raw(`
+                CREATE POLICY townbrief_site_isolation ON ${table}
+                USING (site_id = current_site_id() OR current_site_id() IS NULL)
+                WITH CHECK (site_id = current_site_id() OR current_site_id() IS NULL)
+            `);
+            installed++;
+        }
+        if (installed > 0) {
+            logging.info(`TownBrief: installed/forced RLS on ${installed} site-scoped tables (boot-time check)`);
+        }
+    } catch (err) {
+        require('@tryghost/logging').warn(`ensureRowLevelSecurity skipped: ${err.message}`);
+    }
+}
+
+// TownBrief Phase 4c4e: iterate active sites and create a per-site
+// UrlService for each (the default one is created eagerly by the
+// module's load itself). Must be called AFTER initDynamicRouting() so
+// routerManager._routerParams is populated and can be passed to each
+// per-site instance. Per-site errors are logged and swallowed so a
+// single broken tenant doesn't stall boot.
+async function eagerInitPerSiteUrlServices({urlCache} = {}) {
+    const knex = require('./server/data/db').knex;
+    if (!knex || knex.client.config.client !== 'pg') return;
+    const logging = require('@tryghost/logging');
+    let runWithSite;
+    let urlService;
+    try {
+        runWithSite = require('./server/services/multitenancy/current-site').runWithSite;
+        urlService = require('./server/services/url');
+    } catch (e) {
+        logging.warn(`Phase 4c4e skipped: dependencies unavailable (${e.message})`);
+        return;
+    }
+    if (typeof urlService.ensureUrlServiceForSite !== 'function') {
+        logging.warn('Phase 4c4e skipped: urlService.ensureUrlServiceForSite not present');
+        return;
+    }
+
+    // Collect the router generator params that were recorded by
+    // routerManager.routerCreated() during initDynamicRouting(). These
+    // are replayed onto each per-site UrlService instance so generators
+    // subscribe to the queue before resources load (required for the
+    // queue's requiredSubscriberCount:1 gate to open).
+    let routerParams = [];
+    try {
+        const routing = require('./frontend/services/routing');
+        routerParams = routing.routerManager.getRouterParams();
+    } catch (e) {
+        logging.warn(`Phase 4c4e: could not get router params (${e.message}); per-site URL maps may be empty`);
+    }
+
+    let sites = [];
+    try {
+        sites = await knex('sites')
+            .where('status', 'active')
+            .whereNot('id', 'default0000000000000000')
+            .select('id', 'slug', 'host', 'custom_domain');
+    } catch (err) {
+        logging.warn(`Phase 4c4e sites lookup failed: ${err.message}`);
+        return;
+    }
+
+    if (!sites.length) return;
+    logging.info(`Phase 4c4e: initialising UrlService for ${sites.length} non-default site(s) (${routerParams.length} router type(s))`);
+
+    // Sequential init keeps boot output readable and avoids piling
+    // every site's resource fetch on top of each other in parallel.
+    for (const site of sites) {
+        try {
+            await runWithSite(site, async () => {
+                await urlService.ensureUrlServiceForSite(site, {urlCache, routerParams});
+            });
+        } catch (err) {
+            logging.warn(`Phase 4c4e: init failed for site ${site.slug} (${site.id}): ${err.message}`);
+        }
+    }
+}
+
+async function ensureDefaultSite() {
+    const knex = require('./server/data/db').knex;
+    if (!knex || knex.client.config.client !== 'pg') return;
+    try {
+        const existing = await knex('sites').where('slug', 'default').first('id');
+        if (existing) return;
+        const ObjectID = require('bson-objectid').default;
+        const now = knex.fn.now();
+        await knex('sites').insert({
+            id: 'default0000000000000000',
+            slug: 'default',
+            name: 'Default Site',
+            host: 'localhost',
+            custom_domain: null,
+            status: 'active',
+            stripe_account_id: null,
+            mailgun_from: null,
+            created_at: now,
+            updated_at: now
+        });
+        // eslint-disable-next-line no-unused-vars
+        const _objIdLoaded = ObjectID; // require kept for future per-site seeds
+        require('@tryghost/logging').info('Seeded default site row (boot-time check)');
+    } catch (err) {
+        require('@tryghost/logging').warn(`ensureDefaultSite skipped: ${err.message}`);
+    }
 }
 
 /**
@@ -125,6 +276,10 @@ async function initCore({ghostServer, config, frontend}) {
     urlService.init({
         urlCache: !frontend // hacky parameter to make the cache initialization kick in as we can't initialize labs before the boot
     });
+
+    // Phase 4c4e: eagerInitPerSiteUrlServices() is now called in the
+    // main boot sequence AFTER initDynamicRouting() so router params
+    // are available for per-site generator replay. Removed from here.
     debug('End: Url Service');
 
     if (ghostServer) {
@@ -562,6 +717,16 @@ async function bootGhost({backend = true, frontend = true, server = true} = {}) 
         if (frontend) {
             await initDynamicRouting();
             await initAppService();
+            // Phase 4c4e: fire-and-forget so boot is not blocked by
+            // per-site resource fetches across potentially 50+ sites.
+            // Phase 6b filter covers correctness during the warm-up
+            // window (falls back to the default UrlService until each
+            // per-site instance is ready). Must start AFTER
+            // initDynamicRouting() so routerManager._routerParams is
+            // populated for generator replay.
+            eagerInitPerSiteUrlServices({urlCache: false}).catch((err) => {
+                require('@tryghost/logging').warn(`Phase 4c4e per-site URL service init error: ${err.message}`);
+            });
         }
 
         await initServices();

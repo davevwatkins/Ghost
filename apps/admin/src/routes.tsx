@@ -1,7 +1,12 @@
 import {type RouteObject, Outlet, lazyComponent, redirect} from "@tryghost/admin-x-framework";
 
 // ActivityPub
-import { FeatureFlagsProvider, routes as activityPubRoutes } from "@tryghost/activitypub/api";
+// TownBrief multitenancy: ActivityPub is disabled for the local dev
+// preview while a couple of source files in apps/activitypub/src/views
+// have stuck Windows ACLs that we can't read. Stub the import so the
+// admin app boots; re-enable once activitypub source files are accessible.
+const FeatureFlagsProvider = ({ children }: { children: React.ReactNode }) => <>{children}</>;
+const activityPubRoutes: any[] = [];
 
 // Posts (aka tags and post analytics)
 import { PostsAppContextProvider, routes as postRoutes } from "@tryghost/posts/api";
@@ -132,7 +137,7 @@ export const routes: RouteObject[] = [
             {
                 path: `settings/*`,
                 lazy: lazyComponent(() => import("./settings/settings")),
-                handle: { allowInForceUpgrade: true } satisfies RouteHandle,
+                handle: { allowInForceUpgrade: true, fullscreen: true } satisfies RouteHandle,
             },
             // Ember-handled routes
             ...emberFallbackRoutes,

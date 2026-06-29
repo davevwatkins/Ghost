@@ -1,0 +1,33 @@
+{{!-- TownBrief Phase 5b: top-bar site picker dropdown.
+     Insert into a parent template via <GhSitePicker /> wherever the
+     admin's account menu lives. Hidden when the current user can't
+     switch sites (no superadmin + only one site). --}}
+{{#if this.sites.canSwitchSites}}
+    <div class="gh-site-picker" data-test-site-picker>
+        <span class="gh-site-picker-current">
+            {{#if this.currentSite}}
+                {{this.currentSite.name}}
+            {{else}}
+                Select site
+            {{/if}}
+        </span>
+        <div class="gh-site-picker-menu">
+            {{#each this.sites.sites as |site|}}
+                <button
+                    type="button"
+                    class="gh-site-picker-item {{if (eq site.id this.currentSite.id) 'is-current'}}"
+                    {{on "click" (fn this.switchTo site)}}
+                    data-test-site-picker-item={{site.slug}}
+                >
+                    <strong>{{site.name}}</strong>
+                    <small>{{site.host}}</small>
+                </button>
+            {{/each}}
+            {{#if this.sites.isSuperadmin}}
+                <div class="gh-site-picker-footer">
+                    <em>Superadmin: all sites visible</em>
+                </div>
+            {{/if}}
+        </div>
+    </div>
+{{/if}}

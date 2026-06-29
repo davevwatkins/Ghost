@@ -91,7 +91,7 @@ const MainContent: React.FC = () => {
     return (
         <Page>
             {loadingModal && <div className={`fixed inset-0 z-40 h-[calc(100vh-55px)] w-[100vw] tablet:h-[100vh] ${topLevelBackdropClasses}`} />}
-            <div className="fixed inset-x-0 top-0 z-[35] max-w-[calc(100%-16px)] flex-1 basis-[320px] overscroll-y-contain bg-white p-8 tablet:relative tablet:inset-x-auto tablet:top-auto tablet:h-full tablet:overflow-y-scroll tablet:bg-grey-50 tablet:py-0 dark:bg-grey-950 dark:tablet:bg-[#101114]" id="admin-x-settings-sidebar-scroller">
+            <div className="fixed inset-x-0 top-0 z-[35] max-w-[calc(100%-16px)] flex-1 basis-[240px] overscroll-y-contain bg-white p-8 tablet:relative tablet:inset-x-auto tablet:top-auto tablet:h-full tablet:overflow-y-scroll tablet:bg-grey-50 tablet:py-0 dark:bg-grey-950 dark:tablet:bg-[#101114]" id="admin-x-settings-sidebar-scroller">
                 <div className="relative w-full">
                     <Sidebar />
                 </div>

@@ -2,6 +2,11 @@
     admin off
 }
 
+# TownBrief superadmin dashboard
+superadmin.localtest.me:80 {
+    reverse_proxy ghost-dev-superadmin:3001
+}
+
 :80 {
     # Compact log format for development
     log {
@@ -98,6 +103,14 @@
             }
         }
 
+        # Public app dev servers: when running, the host dev server gets the
+        # request; when down (502/connection refused), the request fails fast
+        # so handle_errors below can fall back to the bundled assets that
+        # Ghost serves out of ghost/core/core/built/. That mirrors what
+        # /ghost/assets/koenig-lexical/* already does and lets the public
+        # frontend (Portal signin/subscribe, comments, search, etc.) work
+        # without a developer having to start every `pnpm dev` separately.
+
         # Portal
         @portal path /portal/*
         handle @portal {
@@ -105,6 +118,8 @@
             reverse_proxy {env.PORTAL_DEV_SERVER} {
                 header_up Host {http.reverse_proxy.upstream.hostport}
                 header_up X-Forwarded-Host {host}
+                fail_duration 1s
+                unhealthy_request_count 1
             }
         }
 
@@ -115,6 +130,8 @@
             reverse_proxy {env.COMMENTS_DEV_SERVER} {
                 header_up Host {http.reverse_proxy.upstream.hostport}
                 header_up X-Forwarded-Host {host}
+                fail_duration 1s
+                unhealthy_request_count 1
             }
         }
 
@@ -125,6 +142,8 @@
             reverse_proxy {env.SIGNUP_DEV_SERVER} {
                 header_up Host {http.reverse_proxy.upstream.hostport}
                 header_up X-Forwarded-Host {host}
+                fail_duration 1s
+                unhealthy_request_count 1
             }
         }
 
@@ -135,6 +154,8 @@
             reverse_proxy {env.SEARCH_DEV_SERVER} {
                 header_up Host {http.reverse_proxy.upstream.hostport}
                 header_up X-Forwarded-Host {host}
+                fail_duration 1s
+                unhealthy_request_count 1
             }
         }
 
@@ -145,6 +166,8 @@
             reverse_proxy {env.ANNOUNCEMENT_DEV_SERVER} {
                 header_up Host {http.reverse_proxy.upstream.hostport}
                 header_up X-Forwarded-Host {host}
+                fail_duration 1s
+                unhealthy_request_count 1
             }
         }
 
@@ -155,12 +178,15 @@
             reverse_proxy {env.ADMIN_TOOLBAR_DEV_SERVER} {
                 header_up Host {http.reverse_proxy.upstream.hostport}
                 header_up X-Forwarded-Host {host}
+                fail_duration 1s
+                unhealthy_request_count 1
             }
         }
 
         # Everything else under /ghost/assets/* goes to admin dev server.
         # Vite serves admin/Ember assets under its dev base (/__admin-dev__/assets/),
         # so we rewrite the request before proxying.
+        # Requires `cd apps/admin && pnpm dev` running on the host at port 5174.
         handle {
             rewrite * /__admin-dev__/assets{path}
             reverse_proxy {env.ADMIN_DEV_SERVER} {
@@ -201,9 +227,11 @@
         }
     }
 
-    # Admin HTML entry — proxy to Vite, which serves the dev index.html.
-    # Matches `/ghost` and `/ghost/` exactly (deep links fall through to Ghost
-    # below so its redirect middleware turns them into hash URLs).
+    # Admin HTML entry — proxy to Vite, which serves the dev index.html
+    # combining Ember + React shell scripts. Matches `/ghost` and `/ghost/`
+    # exactly; deep links fall through to Ghost below so its redirect
+    # middleware turns them into hash URLs.
+    # Requires `cd apps/admin && pnpm dev` running on the host at port 5174.
     @admin_html path /ghost /ghost/
     handle @admin_html {
         rewrite * /__admin-dev__/
@@ -214,7 +242,15 @@
 
     # Everything else under /ghost/* (deep links, redirects, etc.) goes to
     # Ghost so the same Express middleware runs in dev as in production.
-    handle /ghost/* {
+    # TownBrief: the matcher must NOT include exact `/ghost` or `/ghost/`
+    # — otherwise Caddy's path-specificity sort makes this block beat
+    # `@admin_html` (which targets those two exact paths) since `/ghost/*`
+    # is longer than `/ghost/`, leaving the React admin shell unreachable.
+    @ghost_deep {
+        path /ghost/*
+        not path /ghost /ghost/
+    }
+    handle @ghost_deep {
         reverse_proxy {env.GHOST_BACKEND} {
             header_up Host {host}
             header_up X-Real-IP {remote_host}
@@ -237,8 +273,9 @@
 
     # Handle errors
     handle_errors {
-        # Fallback for Lexical when dev server is unavailable (502/503/504)
-        # Forwards to Ghost backend which serves the built koenig-lexical package
+        # Koenig Lexical: Ghost backend serves the built koenig-lexical
+        # package out of node_modules, so fall back there when the dev
+        # server is down.
         @lexical_fallback `{http.request.orig_uri.path}.startsWith("/ghost/assets/koenig-lexical/")`
         handle @lexical_fallback {
             rewrite * {http.request.orig_uri.path}
@@ -246,6 +283,42 @@
                 header_up Host {host}
                 header_up X-Forwarded-Proto https
             }
+        }
+
+        # Public widgets: when the host dev server is unreachable, redirect
+        # to the jsDelivr CDN bundles that match Ghost's default versions
+        # (see ghost/core/core/shared/config/defaults.json). This keeps
+        # Portal signin/subscribe, comments, search, announcement, signup
+        # form, and the admin toolbar working without anyone running each
+        # `pnpm dev` on the host. Versions are pinned here — bump when the
+        # corresponding defaults.json entry changes.
+        @portal_fallback `{http.request.orig_uri.path}.startsWith("/ghost/assets/portal/")`
+        handle @portal_fallback {
+            redir https://cdn.jsdelivr.net/ghost/portal@~2.69/umd/portal.min.js 302
+        }
+        @comments_fallback `{http.request.orig_uri.path}.startsWith("/ghost/assets/comments-ui/")`
+        handle @comments_fallback {
+            redir https://cdn.jsdelivr.net/ghost/comments-ui@~1.5/umd/comments-ui.min.js 302
+        }
+        @signup_fallback `{http.request.orig_uri.path}.startsWith("/ghost/assets/signup-form/")`
+        handle @signup_fallback {
+            redir https://cdn.jsdelivr.net/ghost/signup-form@~0.3/umd/signup-form.min.js 302
+        }
+        @search_js_fallback `{http.request.orig_uri.path} == "/ghost/assets/sodo-search/sodo-search.min.js"`
+        handle @search_js_fallback {
+            redir https://cdn.jsdelivr.net/ghost/sodo-search@~1.8/umd/sodo-search.min.js 302
+        }
+        @search_css_fallback `{http.request.orig_uri.path} == "/ghost/assets/sodo-search/main.css"`
+        handle @search_css_fallback {
+            redir https://cdn.jsdelivr.net/ghost/sodo-search@~1.8/umd/main.css 302
+        }
+        @announcement_fallback `{http.request.orig_uri.path}.startsWith("/ghost/assets/announcement-bar/")`
+        handle @announcement_fallback {
+            redir https://cdn.jsdelivr.net/ghost/announcement-bar@~1.1/umd/announcement-bar.min.js 302
+        }
+        @toolbar_fallback `{http.request.orig_uri.path}.startsWith("/ghost/assets/admin-toolbar/")`
+        handle @toolbar_fallback {
+            redir https://cdn.jsdelivr.net/ghost/admin-toolbar@~0.1/umd/admin-toolbar.min.js 302
         }
 
         # Default error response

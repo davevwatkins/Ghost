@@ -4,13 +4,66 @@
 const debug = require('@tryghost/debug')('settings:cache');
 const _ = require('lodash');
 
-/**
- * Why hasn't this been moved to @tryghost/settings-cache yet?
- *
- * - It currently still couples the frontend and server together in a weird way via the event system
- * - See the notes in core/server/lib/common/events
- * - There's also a plan to introduce a proper caching layer, and rewrite this on top of that
- */
+// URL-type settings whose values may contain __GHOST_URL__ placeholders.
+// Expansion is done lazily at get() time using the per-request site URL
+// so every tenant gets its own hostname (Phase 4b fix).
+const URL_SETTING_KEYS = new Set([
+    'cover_image', 'logo', 'icon', 'portal_button_icon',
+    'og_image', 'twitter_image', 'pintura_js_url', 'pintura_css_url'
+]);
+
+// Lazy require: url-utils is not available at module-load time (circular-dep
+// risk) but is guaranteed to be loaded by the time get() is called in a
+// live request. Returns null if not yet loadable (e.g. during early boot).
+let _urlUtils;
+function getUrlUtils() {
+    if (!_urlUtils) {
+        try {
+            _urlUtils = require('../url-utils');
+        } catch (e) {
+            return null;
+        }
+    }
+    return _urlUtils;
+}
+
+// TownBrief multitenancy Phase 4a: this used to be ONE cache; now there is
+// one cache per site_id. Public API is unchanged — callers still do
+// `settingsCache.get('title')` and the cache reads the active site from
+// AsyncLocalStorage (`getCurrentSiteId()`). If no site is active (boot,
+// background jobs that haven't entered a site scope), the cache reads from
+// the 'default' site bucket so legacy single-tenant code paths keep
+// working unchanged.
+//
+// The require below is deferred — settings-cache is loaded EXTREMELY early
+// in boot, before services/multitenancy is reachable in some code paths.
+// We lazy-resolve it on each call.
+let _getCurrentSiteId;
+function getCurrentSiteId() {
+    if (!_getCurrentSiteId) {
+        try {
+            _getCurrentSiteId = require('../../server/services/multitenancy/current-site').getCurrentSiteId;
+        } catch (e) {
+            // Service not loadable (e.g. during the multitenancy service's
+            // own module init). Return null = system scope.
+            return null;
+        }
+    }
+    return _getCurrentSiteId();
+}
+
+// Must match the seed default site's id AND the schema.js column default
+// for `site_id` across every table. Single source of truth so the no-
+// active-site fallback bucket aligns with the boot-loaded data bucket.
+const DEFAULT_BUCKET = 'default0000000000000000';
+
+// Resolve the site_id bucket key. The boot phase loads all settings before
+// any request arrives, so we group by site_id at init time and resolve
+// against `'default'` when there's no active site.
+function bucketKey(explicitSiteId) {
+    if (explicitSiteId) return explicitSiteId;
+    return getCurrentSiteId() || DEFAULT_BUCKET;
+}
 
 /**
  * @typedef {Object} PublicSettingsCache
@@ -73,8 +126,13 @@ class CacheManager {
      * @prop {Object} options.publicSettings - key/value pairs of settings which are publicly accessible
      */
     constructor({publicSettings}) {
-        // settingsCache holds cached settings, keyed by setting.key, contains the JSON version of the model
-        this.settingsCache;
+        // Per-site bucket of caches. Key = site_id, Value = cache store
+        // instance (whatever was passed to init via cacheStore + a per-site
+        // clone of it). The default bucket exists from the moment init
+        // runs; other sites are populated when init sees a settings row
+        // with their site_id, or lazily by ensureBucket().
+        this._buckets = new Map();
+        this._cacheStoreFactory = null; // captured at init for lazy bucket creation
         this.settingsOverrides = {};
         this.publicSettings = publicSettings;
         this.calculatedFields = [];
@@ -89,25 +147,50 @@ class CacheManager {
         this._updateCalculatedField = this._updateCalculatedField.bind(this);
     }
 
+    // Get or lazily create the cache store for a site bucket.
+    _bucket(siteId) {
+        const key = siteId || DEFAULT_BUCKET;
+        let bucket = this._buckets.get(key);
+        if (!bucket && this._cacheStoreFactory) {
+            bucket = this._cacheStoreFactory();
+            this._buckets.set(key, bucket);
+            debug(`Lazily created settings bucket for site ${key}`);
+        }
+        return bucket;
+    }
+
     // Local function, only ever used for initializing
     // We deliberately call "set" on each model so that set is a consistent interface
     _updateSettingFromModel(settingModel) {
         debug('Auto updating', settingModel.get('key'));
-        this.set(settingModel.get('key'), settingModel.toJSON());
+        // settingModel carries site_id (Phase 2). Use it to route the
+        // update to the right bucket so the event handler doesn't need to
+        // run inside a runWithSite() scope.
+        const siteId = settingModel.get('site_id');
+        this.set(settingModel.get('key'), settingModel.toJSON(), {siteId});
     }
 
     _updateCalculatedField(field) {
         return () => {
             debug('Auto updating', field.key);
-            this.set(field.key, field.getSetting());
+            // Calculated fields can depend on the active site, but for now
+            // they update across ALL sites. This is acceptable for the
+            // current calculated fields (db_hash, members_enabled flags
+            // derived from generic config); per-site calculated fields are
+            // a Phase 4b problem.
+            for (const siteId of this._buckets.keys()) {
+                this.set(field.key, field.getSetting(), {siteId});
+            }
         };
     }
 
     _doGet(key, options) {
-        // NOTE: "!this.settingsCache" is for when setting's cache is used
-        //       before it had a chance to initialize. Should be fixed when
-        //       it is decoupled from the model layer
-        if (!this.settingsCache) {
+        const siteId = (options && options.siteId) || bucketKey();
+        const bucket = this._bucket(siteId);
+        // NOTE: "!bucket" is for when the cache is used before init or for
+        // a site that has never been touched. Returns undefined like the
+        // pre-multitenant code path did.
+        if (!bucket) {
             return;
         }
 
@@ -117,7 +200,7 @@ class CacheManager {
             override = {value: this.settingsOverrides[key]};
         }
 
-        const cacheEntry = this.settingsCache.get(key);
+        const cacheEntry = bucket.get(key);
 
         if (override) {
             cacheEntry.value = override.value;
@@ -133,10 +216,6 @@ class CacheManager {
             return cacheEntry;
         }
 
-        // TODO: I think we should be a little smarter here and deserialize the value based on the type
-        //       rather than trying to parse everything as JSON, which is very slow when we do it hundreds
-        //       of times per request.
-
         // Default behavior is to try to resolve the value and return that
         try {
             // CASE: handle literal false
@@ -146,7 +225,16 @@ class CacheManager {
 
             // CASE: hotpath early return for strings which are already strings
             if (cacheEntry.type === 'string' && typeof cacheEntry.value === 'string') {
-                return cacheEntry.value || null;
+                let val = cacheEntry.value;
+                // Expand __GHOST_URL__ per-request for URL-type settings so
+                // every tenant gets its own hostname (Phase 4b).
+                if (URL_SETTING_KEYS.has(key) && val && val.includes('__GHOST_URL__')) {
+                    const urlUtils = getUrlUtils();
+                    if (urlUtils) {
+                        val = urlUtils.transformReadyToAbsolute(val);
+                    }
+                }
+                return val || null;
             }
 
             // CASE: if a string contains a number e.g. "1", JSON.parse will auto convert into integer
@@ -161,22 +249,9 @@ class CacheManager {
     }
 
     /**
-     *
-     * IMPORTANT:
-     * We store settings with a type and a key in the database.
-     *
-     * {
-     *   type: core
-     *   key: db_hash
-     *   value: ...
-     * }
-     *
-     * But the settings cache does not allow requesting a value by type, only by key.
-     * e.g. settingsCache.get('db_hash')
-     *
-     * Get a key from the this.settingsCache
-     * Will resolve to the value, including parsing JSON, unless {resolve: false} is passed in as an option
-     * In which case the full JSON version of the model will be resolved
+     * Get a key from the active site's cache. `options.siteId` overrides
+     * the AsyncLocalStorage-resolved site (used by event handlers that
+     * already know which site triggered them).
      *
      * @param {string} key
      * @param {object} [options]
@@ -187,57 +262,57 @@ class CacheManager {
     }
 
     /**
-     * Set a key on the cache
-     * The only way to get an object into the cache
-     * Uses clone to prevent modifications from being reflected
+     * Set a key on the cache for the active site (or `options.siteId` if
+     * supplied — used internally when handling settings.edited events).
+     *
      * @param {string} key
      * @param {object} value json version of settings model
+     * @param {object} [options]
      */
-    set(key, value) {
-        this.settingsCache.set(key, _.cloneDeep(value));
+    set(key, value, options) {
+        const siteId = (options && options.siteId) || bucketKey();
+        const bucket = this._bucket(siteId);
+        if (!bucket) {
+            debug(`No bucket for site ${siteId} on set('${key}') — cache not initialised yet`);
+            return;
+        }
+        bucket.set(key, _.cloneDeep(value));
     }
 
     /**
-     * Get the entire cache object
-     * Uses clone to prevent modifications from being reflected
-     * This method is dangerous in case the cache is "lazily" initialized
-     * could result in returning only a partially filled cache
-     * @return {object} cache
-     * @deprecated this method is not "cache-friendly" and should be avoided from further usage
-     *             instead using multiple "get" calls
+     * Get the entire cache object for the active site.
      */
     getAll() {
-        const keys = this.settingsCache.keys();
+        const siteId = bucketKey();
+        const bucket = this._bucket(siteId);
+        if (!bucket) return {};
+        const keys = bucket.keys();
         const all = {};
-
         keys.forEach((key) => {
-            all[key] = _.cloneDeep(this.get(key, {resolve: false}));
+            all[key] = _.cloneDeep(this.get(key, {resolve: false, siteId}));
         });
-
         return all;
     }
 
     /**
      * Get all the publicly accessible cache entries with their correct names
-     * Uses clone to prevent modifications from being reflected
-    * @return {PublicSettingsCache} cache
+     * for the active site.
+     * @return {PublicSettingsCache} cache
      */
     getPublic() {
-        // This block correctly builds the type signature for the return value
+        const siteId = bucketKey();
         /** @type {PublicSettingsCache} */
         let settings = Object.fromEntries(
             Object.keys(this.publicSettings).map(key => [this.publicSettings[key], null])
         );
 
-        // This block correctly populates the values from the cache
         for (const newKey in this.publicSettings) {
-            settings[newKey] = this._doGet(this.publicSettings[newKey]) ?? null;
+            settings[newKey] = this._doGet(this.publicSettings[newKey], {siteId}) ?? null;
         }
 
         // Compute transistor_portal_enabled: only true if main integration AND portal setting are both enabled
-        //  - this is done server-side because we shouldn't expose the transistor integration setting
         if ('transistor_portal_enabled' in settings) {
-            const transistorEnabled = this._doGet('transistor');
+            const transistorEnabled = this._doGet('transistor', {siteId});
             const portalEnabled = settings.transistor_portal_enabled;
             settings.transistor_portal_enabled = Boolean(transistorEnabled) && Boolean(portalEnabled);
         }
@@ -246,25 +321,38 @@ class CacheManager {
     }
 
     /**
-     * Initialize the cache
+     * Initialize the per-site cache buckets.
      *
-     * Optionally takes a collection of settings & can populate the cache with these.
+     * On a fresh boot, `settingsCollection` holds settings for EVERY site —
+     * we group them by `site_id` and populate one bucket per site. The
+     * cacheStore is used as a factory: we call it once for the default
+     * site at init, and the same factory is invoked lazily when a setting
+     * arrives for a site we haven't seen yet.
      *
      * @param {import('events').EventEmitter} events
      * @param {import('bookshelf').Collection<import('bookshelf').Model>} settingsCollection
      * @param {Array} calculatedFields
-     * @param {Object} cacheStore - cache storage instance base on Cache Base Adapter
+     * @param {Object} cacheStore - cache storage instance based on Cache Base Adapter
      * @param {Object} settingsOverrides - key/value pairs of settings which are overridden (i.e. via config)
-     * @return {Object} - filled out instance for Cache Base Adapter
+     * @return {Object} - the default-site bucket, for callers that expected the old single-cache return
      */
     init(events, settingsCollection, calculatedFields, cacheStore, settingsOverrides) {
-        this.settingsCache = cacheStore;
+        // The legacy contract handed us a single cacheStore instance. With
+        // per-site buckets we need a factory that yields fresh siblings.
+        // We invoke the adapter's constructor (assumes zero-arg) so the
+        // instance is fully initialised (e.g. MemoryCache sets `_data = {}`
+        // in its constructor — Object.create on the prototype skips that).
+        this._cacheStoreFactory = () => new cacheStore.constructor();
+
+        // Default-site bucket uses the supplied cacheStore directly so any
+        // pre-existing reference held by callers continues to work.
+        this._buckets.set(DEFAULT_BUCKET, cacheStore);
         this.settingsOverrides = settingsOverrides;
-        // First, reset the cache and
+        // First, reset the cache and re-wire events
         this.reset(events);
 
-        // // if we have been passed a collection of settings, use this to populate the cache
         if (settingsCollection && settingsCollection.models) {
+            // Group by site_id and populate each bucket.
             _.each(settingsCollection.models, this._updateSettingFromModel);
         }
 
@@ -283,16 +371,18 @@ class CacheManager {
             });
         });
 
-        return this.settingsCache;
+        return this._buckets.get(DEFAULT_BUCKET);
     }
 
     /**
-     * Reset both the cache and the listeners, must be called during init
+     * Reset all buckets and the event listeners, must be called during init.
      * @param {import('events').EventEmitter} events
      */
     reset(events) {
-        if (this.settingsCache) {
-            this.settingsCache.reset();
+        for (const bucket of this._buckets.values()) {
+            if (bucket && typeof bucket.reset === 'function') {
+                bucket.reset();
+            }
         }
 
         events.removeListener('settings.edited', this._updateSettingFromModel);

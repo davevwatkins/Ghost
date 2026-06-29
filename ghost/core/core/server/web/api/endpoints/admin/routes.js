@@ -18,6 +18,13 @@ module.exports = function apiRoutes() {
     // ## Public
     router.get('/site', mw.publicAdminApi, http(api.site.read));
 
+    // TownBrief multitenancy Phase 5a: site picker. Returns the list of
+    // sites the authenticated user can switch to in the admin UI.
+    router.get('/sites', mw.authAdminApi, http(api.sites.browse));
+    // Phase 9: create a new site (superadmin only — enforced inside the
+    // controller). Seeds the new site's default settings rows.
+    router.post('/sites', mw.authAdminApi, http(api.sites.add));
+
     // ## Configuration
     router.get('/config', mw.authAdminApi, http(api.config.read));
     router.get('/config/featurebase', mw.authAdminApi, http(api.config.featurebase));
@@ -287,6 +294,15 @@ module.exports = function apiRoutes() {
     router.delete('/session', mw.authAdminApi, http(api.session.delete));
     router.post('/session/verify', shared.middleware.brute.sendVerificationCode, http(api.session.sendVerification));
     router.put('/session/verify', shared.middleware.brute.userVerification, http(api.session.verify));
+
+    // TownBrief multitenancy Phase 5d: cross-site SSO. The mint
+    // endpoint is auth-protected (the caller's session is what proves
+    // they're a superadmin). The redeem endpoint is NOT auth-protected
+    // because the SSO token IS the authentication, and the request
+    // arrives on the TARGET host without any cookie yet.
+    const crossSiteSso = require('./cross-site-sso-controller');
+    router.post('/session/sso-token', mw.authAdminApi, crossSiteSso.mintHandler);
+    router.get('/session/sso-redeem', crossSiteSso.redeemHandler);
 
     // ## Identity
     router.get('/identities', mw.authAdminApi, http(api.identities.read));

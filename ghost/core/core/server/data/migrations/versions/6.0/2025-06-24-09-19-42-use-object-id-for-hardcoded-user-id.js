@@ -63,12 +63,12 @@ module.exports = createTransactionalMigration(
             .where('actor_type', 'user')
             .update({actor_id: newId});
 
-        // 5. Update user_id inside session_data JSON
+        // 5. Update user_id inside session_data JSON (TownBrief: ported to Postgres).
+        // session_data is stored as text; cast through jsonb for the update.
         await knex.raw(`
             UPDATE sessions
-            SET session_data = JSON_SET(session_data, '$.user_id', ?)
-            WHERE JSON_VALID(session_data)
-            AND JSON_EXTRACT(session_data, '$.user_id') = ?
+            SET session_data = jsonb_set(session_data::jsonb, '{user_id}', to_jsonb(?::text))::text
+            WHERE session_data::jsonb->>'user_id' = ?
         `, [newId, LEGACY_HARDCODED_USER_ID]);
 
         // Step 3: Clean up the now redundant user record identified by the

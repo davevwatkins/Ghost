@@ -20,6 +20,9 @@ class RouterManager {
          * @type {URLServiceFacade}
          */
         this.urlService = null;
+        // Phase 4c4e: record every generator registration so per-site
+        // UrlService instances can replay them after boot.
+        this._routerParams = [];
     }
 
     ownsResource(routerId, resource) {
@@ -41,12 +44,30 @@ class RouterManager {
             return;
         }
 
+        const params = {
+            identifier: router.identifier,
+            filter: router.filter,
+            resourceType: router.getResourceType(),
+            permalink: router.getPermalinks().getValue()
+        };
+        // Phase 4c4e: record for per-site UrlService replay
+        this._routerParams.push(params);
+
         this.urlService.onRouterAddedType(
-            router.identifier,
-            router.filter,
-            router.getResourceType(),
-            router.getPermalinks().getValue()
+            params.identifier,
+            params.filter,
+            params.resourceType,
+            params.permalink
         );
+    }
+
+    /**
+     * Phase 4c4e: return a snapshot of all registered router params so
+     * per-site UrlService instances can replay generator registration.
+     * @returns {{identifier: string, filter: string, resourceType: string, permalink: string}[]}
+     */
+    getRouterParams() {
+        return this._routerParams.slice();
     }
 
     /**

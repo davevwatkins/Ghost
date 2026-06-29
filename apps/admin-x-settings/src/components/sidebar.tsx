@@ -169,7 +169,7 @@ const Sidebar: React.FC = () => {
     );
 
     return (
-        <div className='ml-auto flex w-full flex-col pt-0 tablet:max-w-[240px]' data-testid="sidebar">
+        <div className='mr-auto flex w-full flex-col pt-0 tablet:max-w-[240px]' data-testid="sidebar">
             <div className='sticky top-0 flex content-stretch items-end tablet:h-20 tablet:bg-grey-50 xl:h-20 dark:bg-grey-950 dark:tablet:bg-[#101114]'>
                 <div className='relative w-full'>
                     <Icon className='absolute top-2.5 left-3 z-10' colorClass='text-grey-500' name='magnifying-glass' size='sm' />

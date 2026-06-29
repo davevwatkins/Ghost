@@ -199,11 +199,17 @@ describe('UNIT: settings cache', function () {
     it('.reset() and .init() do not double up events', function () {
         const setSpy = sinon.spy(cache, 'set');
 
+        // TownBrief multitenancy: the model's `get` is called for both
+        // 'key' (the setting name) and 'site_id' (added Phase 2).
+        // The legacy stub returned 'key1' for everything which routed
+        // updates into a 'key1' site bucket instead of the default.
+        const mkSettingStub = (value) => ({
+            get: (prop) => (prop === 'site_id' ? null : 'key1'),
+            toJSON: () => ({value})
+        });
+
         const settingsCollection = {
-            models: [{
-                get: () => 'key1',
-                toJSON: () => ({value: 'init value'})
-            }]
+            models: [mkSettingStub('init value')]
         };
 
         let cacheStore = new InMemoryCache();
@@ -212,10 +218,7 @@ describe('UNIT: settings cache', function () {
 
         // check handler only called once on settings.edit
         sinon.assert.calledOnce(setSpy);
-        events.emit('settings.edited', {
-            get: () => 'key1',
-            toJSON: () => ({value: 'first edit'})
-        });
+        events.emit('settings.edited', mkSettingStub('first edit'));
         sinon.assert.calledTwice(setSpy);
         assert.equal(cache.get('key1'), 'first edit');
 
@@ -226,11 +229,53 @@ describe('UNIT: settings cache', function () {
         assert.equal(cache.get('key1'), 'init value');
 
         // edit again, check event only fired once
-        events.emit('settings.edited', {
-            get: () => 'key1',
-            toJSON: () => ({value: 'second edit'})
-        });
+        events.emit('settings.edited', mkSettingStub('second edit'));
         sinon.assert.callCount(setSpy, 4);
         assert.equal(cache.get('key1'), 'second edit');
+    });
+
+    describe('multitenancy (Phase 4a)', function () {
+        const {runWithSite} = require('../../../core/server/services/multitenancy/current-site');
+        const SITE_A = {id: 'sitea00000000000000000aa', slug: 'sitea', host: 'a.test'};
+        const SITE_B = {id: 'siteb00000000000000000bb', slug: 'siteb', host: 'b.test'};
+
+        it('reads from the active site bucket; cross-site is isolated', async function () {
+            // Boot-time init loads ALL sites' settings in one go (the
+            // settingsCollection on disk has site_id per row). Simulate that.
+            const settingsCollection = {
+                models: [
+                    {get: (p) => p === 'site_id' ? SITE_A.id : 'title',
+                        toJSON: () => ({value: 'Wayland Post'})},
+                    {get: (p) => p === 'site_id' ? SITE_B.id : 'title',
+                        toJSON: () => ({value: 'Sudbury Brief'})}
+                ]
+            };
+            const cacheStore = new InMemoryCache();
+            const cache = new CacheManager({publicSettings});
+            cache.init(events, settingsCollection, [], cacheStore);
+
+            const fromA = await runWithSite(SITE_A, () => cache.get('title'));
+            const fromB = await runWithSite(SITE_B, () => cache.get('title'));
+            assert.equal(fromA, 'Wayland Post');
+            assert.equal(fromB, 'Sudbury Brief');
+            assert.notEqual(fromA, fromB, 'sites must not share a setting value');
+        });
+
+        it('without active site, reads from the default bucket', function () {
+            const settingsCollection = {
+                models: [
+                    {get: (p) => p === 'site_id' ? null : 'title',
+                        toJSON: () => ({value: 'Default Title'})},
+                    {get: (p) => p === 'site_id' ? SITE_A.id : 'title',
+                        toJSON: () => ({value: 'Wayland Post'})}
+                ]
+            };
+            const cacheStore = new InMemoryCache();
+            const cache = new CacheManager({publicSettings});
+            cache.init(events, settingsCollection, [], cacheStore);
+
+            // No runWithSite -> falls to default bucket
+            assert.equal(cache.get('title'), 'Default Title');
+        });
     });
 });

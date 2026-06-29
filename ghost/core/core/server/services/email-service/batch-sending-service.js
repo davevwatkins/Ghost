@@ -2,6 +2,19 @@ const logging = require('@tryghost/logging');
 const ObjectID = require('bson-objectid').default;
 const errors = require('@tryghost/errors');
 const tpl = require('@tryghost/tpl');
+
+// TownBrief multitenancy Phase 8: newsletter sends run inside the
+// originating site's runWithSite() scope so the mail service composes
+// the right `from` / `support_email_address` / URLs (Phase 4a + 4b
+// already make those per-site at call time). Lazy require to dodge
+// boot-order circularity — this file loads as part of services init.
+let _runWithSite;
+function runWithSite(site, fn) {
+    if (!_runWithSite) {
+        _runWithSite = require('../multitenancy/current-site').runWithSite;
+    }
+    return _runWithSite(site, fn);
+}
 const messages = {
     emailErrorPartialFailure: 'An error occurred, and your newsletter was only partially sent. Please retry sending the remaining emails.',
     emailError: 'An unexpected error occurred, please retry sending your newsletter.'
@@ -148,45 +161,54 @@ class BatchSendingService {
             return;
         }
 
-        // We'll stop all automatic DB retries after this date
-        const expectedBatchCount = Math.ceil(email.get('email_count') / 1000);
-        const minimumSecondsPerBatch = 26; // In case of database issues, we make sure we expand the retry window relative to the amount of batches
-        const stopAfter = Math.max(expectedBatchCount * minimumSecondsPerBatch * 1000, this.#BEFORE_RETRY_CONFIG.maxTime);
-        const retryCutOffTime = new Date(startTime + stopAfter);
+        // TownBrief Phase 8: scope the rest of the job to the email's
+        // originating site so the mail service reads the right `from` /
+        // `support_email_address` and the URL helpers produce links
+        // pointing at the right host. Falls back to default site if the
+        // email row predates Phase 2 (site_id added via Phase 2 default).
+        const siteId = email.get('site_id') || 'default0000000000000000';
 
-        // Save a strict cutoff time for retries
-        email._retryCutOffTime = retryCutOffTime;
+        return runWithSite({id: siteId}, async () => {
+            // We'll stop all automatic DB retries after this date
+            const expectedBatchCount = Math.ceil(email.get('email_count') / 1000);
+            const minimumSecondsPerBatch = 26; // In case of database issues, we make sure we expand the retry window relative to the amount of batches
+            const stopAfter = Math.max(expectedBatchCount * minimumSecondsPerBatch * 1000, this.#BEFORE_RETRY_CONFIG.maxTime);
+            const retryCutOffTime = new Date(startTime + stopAfter);
 
-        try {
-            await this.sendEmail(email);
-            await this.retryDb(async () => {
-                await email.save({
-                    status: 'submitted',
-                    submitted_at: new Date(),
-                    error: null
-                }, {patch: true, autoRefresh: false});
-            }, {...this.#AFTER_RETRY_CONFIG, description: `email ${emailId} -> submitted`});
-        } catch (e) {
-            const ghostError = new errors.EmailError({
-                err: e,
-                code: 'BULK_EMAIL_SEND_FAILED',
-                message: `Error sending email ${email.id}`
-            });
+            // Save a strict cutoff time for retries
+            email._retryCutOffTime = retryCutOffTime;
 
-            logging.error(ghostError);
-            if (this.#sentry) {
-                // Log the original error to Sentry
-                this.#sentry.captureException(e);
+            try {
+                await this.sendEmail(email);
+                await this.retryDb(async () => {
+                    await email.save({
+                        status: 'submitted',
+                        submitted_at: new Date(),
+                        error: null
+                    }, {patch: true, autoRefresh: false});
+                }, {...this.#AFTER_RETRY_CONFIG, description: `email ${emailId} -> submitted`});
+            } catch (e) {
+                const ghostError = new errors.EmailError({
+                    err: e,
+                    code: 'BULK_EMAIL_SEND_FAILED',
+                    message: `Error sending email ${email.id}`
+                });
+
+                logging.error(ghostError);
+                if (this.#sentry) {
+                    // Log the original error to Sentry
+                    this.#sentry.captureException(e);
+                }
+
+                // Store error and status in email model
+                await this.retryDb(async () => {
+                    await email.save({
+                        status: 'failed',
+                        error: e.message || 'Something went wrong while sending the email'
+                    }, {patch: true, autoRefresh: false});
+                }, {...this.#AFTER_RETRY_CONFIG, description: `email ${emailId} -> failed`});
             }
-
-            // Store error and status in email model
-            await this.retryDb(async () => {
-                await email.save({
-                    status: 'failed',
-                    error: e.message || 'Something went wrong while sending the email'
-                }, {patch: true, autoRefresh: false});
-            }, {...this.#AFTER_RETRY_CONFIG, description: `email ${emailId} -> failed`});
-        }
+        });
     }
 
     /**

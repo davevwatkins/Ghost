@@ -11,6 +11,34 @@ const Resources = require('./resources');
 const urlUtils = require('../../../shared/url-utils');
 const resourcesConfig = require('./config');
 
+// TownBrief multitenancy Phase 6b: defense-in-depth filtering of URL
+// service lookups by the active site. The Resources class fetches ALL
+// posts/pages/tags/authors at boot (no per-site init yet — that's
+// Phase 4c4b). With this filter, even if the cache holds cross-site
+// resources, `getResource`/`getResourceById`/`getUrlByResourceId`/
+// `owns` only return entries whose `resource.data.site_id` matches the
+// active site. When no site is active (boot, background jobs, REPL),
+// the filter is bypassed — system scope sees everything.
+//
+// Lazy require to avoid boot-order circularity.
+let _getCurrentSiteId;
+function getCurrentSiteId() {
+    if (!_getCurrentSiteId) {
+        try {
+            _getCurrentSiteId = require('../multitenancy/current-site').getCurrentSiteId;
+        } catch (e) { return null; }
+    }
+    return _getCurrentSiteId();
+}
+
+function resourceMatchesActiveSite(resource) {
+    const siteId = getCurrentSiteId();
+    if (!siteId) return true; // system scope
+    if (!resource || !resource.data) return true; // shape we don't know how to filter
+    if (!resource.data.site_id) return true; // pre-Phase-2 resources untagged
+    return resource.data.site_id === siteId;
+}
+
 /**
  * The url service class holds all instances in a centralized place.
  * It's the public API you can talk to.
@@ -150,6 +178,10 @@ class UrlService {
 
         let objects = this.urls.getByUrl(url);
 
+        // Phase 6b: filter by active site BEFORE the not-found check
+        // — a cross-site hit is the same as no hit from this site's POV.
+        objects = objects.filter(o => resourceMatchesActiveSite(o.resource));
+
         if (!objects.length) {
             if (!this.hasFinished()) {
                 throw new errors.InternalServerError({
@@ -201,6 +233,16 @@ class UrlService {
             });
         }
 
+        // Phase 6b: cache HIT but the resource is from a different
+        // site — surface as 404. Cache MISS falls through to the
+        // not-found above; we don't treat that as a cross-site issue.
+        if (!resourceMatchesActiveSite(object.resource)) {
+            throw new errors.NotFoundError({
+                message: 'Resource not found.',
+                code: 'URLSERVICE_RESOURCE_NOT_FOUND'
+            });
+        }
+
         return object.resource;
     }
 
@@ -231,7 +273,9 @@ class UrlService {
     getUrlByResourceId(id, options = {}) {
         const obj = this.urls.getByResourceId(id);
 
-        if (obj) {
+        // Phase 6b: cross-site lookups return /404/ — same shape callers
+        // already handle for "resource id not found".
+        if (obj && resourceMatchesActiveSite(obj.resource)) {
             if (options.absolute) {
                 return this.utils.createUrl(obj.url, options.absolute);
             }
@@ -268,7 +312,18 @@ class UrlService {
             return false;
         }
 
-        return urlGenerator.hasId(id);
+        if (!urlGenerator.hasId(id)) return false;
+
+        // Phase 6b: when the URL cache HOLDS this resource AND it belongs
+        // to a different site, refuse ownership. When the URL cache
+        // doesn't know about the resource (added after boot, or fetched
+        // via a path that didn't trigger URL service event listeners),
+        // be permissive — the Phase 3 model layer + RLS have already
+        // scoped the data; we shouldn't double-filter and lose a
+        // legitimately scoped row.
+        const obj = this.urls.getByResourceId(id);
+        if (!obj) return true;
+        return resourceMatchesActiveSite(obj.resource);
     }
 
     /**

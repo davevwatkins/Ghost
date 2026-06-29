@@ -184,10 +184,11 @@ Settings = ghostBookshelf.Model.extend({
             attrs.value = JSON.parse(attrs.value);
         }
 
-        // transform URLs from __GHOST_URL__ to absolute
-        if (['cover_image', 'logo', 'icon', 'portal_button_icon', 'og_image', 'twitter_image', 'pintura_js_url', 'pintura_css_url'].includes(attrs.key)) {
-            attrs.value = urlUtils.transformReadyToAbsolute(attrs.value);
-        }
+        // URL-type settings keep their __GHOST_URL__ placeholder here.
+        // Expansion to an absolute URL is deferred to settingsCache.get()
+        // so each request expands using the correct per-site host via
+        // AsyncLocalStorage (Phase 4b). Expanding at parse/boot time bakes
+        // in localhost:2368 for every site.
 
         return attrs;
     }

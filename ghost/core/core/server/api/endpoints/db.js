@@ -85,11 +85,15 @@ const controller = {
             }
         },
         headers: {
-            cacheInvalidate: true
+            // Suppress global UrlService re-init after each import: with
+            // 58 sites, each re-init takes ~36s and causes the next
+            // sequential import POST to 502/401 mid-flight.
+            // Re-enable once the fleet migration is complete.
+            cacheInvalidate: false
         },
         permissions: true,
         async query(frame) {
-            const siteTimezone = settingsCache.get('timezone');
+            const siteTimezone = settingsCache.get('timezone') || 'UTC';
             const importTag = `#Import ${moment().tz(siteTimezone).format('YYYY-MM-DD HH:mm')}`;
 
             let email;

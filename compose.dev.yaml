@@ -1,25 +1,46 @@
 name: ghost-dev
 
 services:
-  mysql:
-    image: mysql:8.4.9@sha256:c36050afdca850f23cef85703f84c7531a5ae155a11b5ee1c60acb09937c4084
-    container_name: ghost-dev-mysql
-    command: --innodb-buffer-pool-size=1G --innodb-log-buffer-size=500M --innodb-change-buffer-max-size=50 --innodb-flush-log-at-trx_commit=0 --innodb-flush-method=O_DIRECT
+  # TownBrief multitenancy: Postgres replaces MySQL. RLS + partition-by-site_id
+  # are load-bearing for the multitenant model; see deploy/MULTITENANCY.md.
+  postgres:
+    image: postgres:17-alpine
+    container_name: ghost-dev-postgres
+    # Tuned to minimize host impact during dev. Bump these for perf testing.
+    command: >
+      postgres
+      -c shared_buffers=128MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=32MB
+      -c effective_cache_size=256MB
+      -c max_connections=50
+      -c wal_level=logical
     ports:
-      - "3306:3306"
+      # 5433 on host to avoid clashing with any locally-installed Postgres.
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-ghost_dev}
-      MYSQL_USER: ghost
-      MYSQL_PASSWORD: ghost
+      POSTGRES_USER: ${POSTGRES_USER:-ghost}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ghost}
+      POSTGRES_DB: ${POSTGRES_DB:-ghost_dev}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      # TownBrief Phase 1.5c: separate non-super runtime role so RLS
+      # actually enforces (Postgres bypasses RLS for superusers, even
+      # with FORCE). Bootstrap user (POSTGRES_USER above) stays super
+      # for ops + init; Ghost connects as GHOST_APP_USER below.
+      GHOST_APP_USER: ${GHOST_APP_USER:-ghost_app}
+      GHOST_APP_PASSWORD: ${GHOST_APP_PASSWORD:-ghost_app}
     volumes:
-      - mysql-data:/var/lib/mysql
+      - postgres-data:/var/lib/postgresql/data
+      # Init scripts run ONCE on fresh init (empty data dir). For
+      # existing volumes, run docker/postgres-init/01-ghost-app-role.sh
+      # manually via docker exec.
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "mysql", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root}", "-e", "SELECT 1"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ghost} -d ${POSTGRES_DB:-ghost_dev}"]
       interval: 1s
       retries: 120
       timeout: 5s
-      start_period: 10s
+      start_period: 5s
 
   redis:
     image: redis:7.0@sha256:352c1fdadc91926edda08f45aeb3f27f37194c2f14101229c0523a11195c96e3
@@ -67,6 +88,13 @@ services:
       - ./ghost/core:/home/ghost/ghost/core
       - ./ghost/i18n:/home/ghost/ghost/i18n
       - ./ghost/parse-email-address:/home/ghost/ghost/parse-email-address
+      # Anonymous volumes shield the container's image-baked node_modules
+      # from the host bind-mount. Windows pnpm truncates patch-hash dirs to
+      # avoid MAX_PATH; Linux pnpm doesn't. The two layouts can't be shared
+      # via bind-mount, so we let the container keep its own.
+      - /home/ghost/ghost/core/node_modules
+      - /home/ghost/ghost/i18n/node_modules
+      - /home/ghost/ghost/parse-email-address/node_modules
       # Mount specific content subdirectories to preserve themes/adapters from source
       - ghost-dev-data:/home/ghost/ghost/core/content/data
       - ghost-dev-images:/home/ghost/ghost/core/content/images
@@ -79,13 +107,24 @@ services:
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
       DEBUG: ${DEBUG:-}
       pnpm_config_verify_deps_before_run: "false"
-      database__client: mysql2
-      database__connection__host: mysql
-      database__connection__user: root
-      database__connection__password: ${MYSQL_ROOT_PASSWORD:-root}
-      database__connection__database: ${MYSQL_DATABASE:-ghost_dev}
+      database__client: pg
+      database__connection__host: postgres
+      database__connection__port: "5432"
+      # TownBrief Phase 1.5c: runtime connects as the non-super
+      # ghost_app role so RLS actually enforces. Migrations also run as
+      # this role (it owns the schema).
+      database__connection__user: ${GHOST_APP_USER:-ghost_app}
+      database__connection__password: ${GHOST_APP_PASSWORD:-ghost_app}
+      database__connection__database: ${POSTGRES_DB:-ghost_dev}
       server__host: 0.0.0.0
       server__port: 2368
+      # Tell Ghost the externally-reachable URL (via the Caddy gateway on
+      # port 80), not its in-container 2368. The admin session origin check
+      # (ghost/core/core/server/services/auth/session/session-service.js)
+      # compares the browser's Origin header against urlUtils.getAdminUrl();
+      # without this set, Ghost defaults to host:server__port which makes
+      # signin POSTs from the port-80 tab fail with a 400 "incorrect origin".
+      url: ${GHOST_PUBLIC_URL:-http://middlesexcounty.localtest.me}
       mail__transport: SMTP
       mail__options__host: mailpit
       mail__options__port: 1025
@@ -93,7 +132,7 @@ services:
       adapters__cache__Redis__host: redis
       adapters__cache__Redis__port: 6379
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -127,6 +166,27 @@ services:
       ghost-dev:
         condition: service_healthy
 
+  ghost-dev-superadmin:
+    build:
+      context: ./docker/superadmin
+      dockerfile: Dockerfile
+    container_name: ghost-dev-superadmin
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGDATABASE=ghost_dev
+      - PGUSER=ghost
+      - PGPASSWORD=ghost
+      - GHOST_ADMIN_HOST=middlesexcounty.localtest.me
+      - ADMIN_USER=${SUPERADMIN_USER:-admin}
+      - ADMIN_PASS=${SUPERADMIN_PASS:-townbrief2026}
+      - SESSION_SECRET=${SUPERADMIN_SESSION_SECRET:-townbrief-superadmin-dev-secret-change-in-prod}
+      - PORT=3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   stripe:
     image: stripe/stripe-cli:latest@sha256:ac5920c06aa0ecd95e86366cb849de7acd39396e11cf2d0b16ea0e91cbb655ec
     container_name: ghost-dev-stripe
@@ -144,7 +204,7 @@ services:
       retries: 120
 
 volumes:
-  mysql-data:
+  postgres-data:
   redis-data:
   shared-config:
   ghost-dev-data:

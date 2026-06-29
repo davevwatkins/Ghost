@@ -38,6 +38,7 @@
     },
     "devDependencies": {
         "@playwright/test": "catalog:",
+        "@tailwindcss/vite": "catalog:",
         "@tanstack/react-query": "catalog:",
         "@tanstack/react-virtual": "3.13.25",
         "@testing-library/jest-dom": "catalog:",

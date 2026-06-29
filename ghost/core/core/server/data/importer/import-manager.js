@@ -27,6 +27,7 @@ const fileStorage = require('../../adapters/storage').getStorage('files');
 
 const {emailTemplate} = require('./email-template');
 const ghostMailer = new GhostMailer();
+const {getCurrentSiteId, runWithSite} = require('../../services/multitenancy/current-site');
 
 const messages = {
     couldNotCleanUpFile: {
@@ -505,11 +506,20 @@ class ImportManager {
 
         const env = config.get('env');
         if (!env?.startsWith('testing') && !importOptions.runningInJob) {
+            // Capture the current site context before the job runs in a different async context.
+            const siteId = getCurrentSiteId();
             return jobManager.addJob({
-                job: () => this.importFromFile(file, Object.assign({}, importOptions, {
-                    runningInJob: true,
-                    data: importData
-                })),
+                job: () => {
+                    const doRun = () => this.importFromFile(file, Object.assign({}, importOptions, {
+                        runningInJob: true,
+                        data: importData,
+                        // Thread the captured siteId into options so data-importer
+                        // can stamp the correct GUC even if AsyncLocalStorage context
+                        // is wrong under concurrency=3 in the inline job queue.
+                        siteIdForImport: siteId
+                    }));
+                    return siteId ? runWithSite({id: siteId}, doRun) : doRun();
+                },
                 offloaded: false
             });
         }
@@ -529,6 +539,7 @@ class ImportManager {
             return importResult;
         } catch (err) {
             logging.error(err, 'Content import was unsuccessful');
+            logging.error('Import failure detail: ' + (err && (err.stack || err.message || String(err))));
             importResult = {data: {errors: [err]}};
         } finally {
             // Step 5: Cleanup any files

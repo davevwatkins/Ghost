@@ -1,3 +1,4 @@
+import tailwindcss from '@tailwindcss/vite';
 import adminXViteConfig from '@tryghost/admin-x-framework/vite';
 import pkg from './package.json';
 import {resolve} from 'path';
@@ -7,6 +8,9 @@ export default (function viteConfig() {
         packageName: pkg.name,
         entry: resolve(__dirname, 'src/index.tsx'),
         overrides: {
+            // TownBrief: see apps/stats/vite.config.mjs for why this is in
+            // overrides.plugins rather than at the top level.
+            plugins: [tailwindcss()],
             test: {
                 include: [
                     './test/unit/**/*',

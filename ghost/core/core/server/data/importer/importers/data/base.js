@@ -182,11 +182,10 @@ class Base {
      * `requiredImportedData`: the importer allows you to ask for already imported data
      */
     replaceIdentifiers() {
-        const ownerUserId = _.find(this.requiredExistingData.users, (user) => {
-            if (user.roles[0].name === 'Owner') {
-                return true;
-            }
-        }).id;
+        const ownerUser = _.find(this.requiredExistingData.users, (user) => {
+            return user.roles && user.roles[0] && user.roles[0].name === 'Owner';
+        });
+        const ownerUserId = ownerUser ? ownerUser.id : null;
 
         let userReferenceProblems = {};
 
@@ -323,11 +322,22 @@ class Base {
 
         _.each(this.dataToImport, (obj, index) => {
             ops.push(async () => {
+                const trx = options.transacting;
+                const spName = trx ? `sp_${this.modelName}_${index}`.replace(/[^a-z0-9_]/gi, '_') : null;
+
                 try {
+                    if (spName) {
+                        await trx.raw(`SAVEPOINT ${spName}`);
+                    }
+
                     const importedModel = await models[this.modelName].add(obj, options);
                     obj.model = {
                         id: importedModel.id
                     };
+
+                    if (spName) {
+                        await trx.raw(`RELEASE SAVEPOINT ${spName}`);
+                    }
 
                     if (importOptions.returnImportedData) {
                         this.importedDataToReturn.push(importedModel.toJSON());
@@ -341,6 +351,16 @@ class Base {
                     // To free memory early
                     this.dataToImport.splice(index, 1);
                 } catch (err) {
+                    if (spName) {
+                        // Postgres aborts the transaction on constraint violations.
+                        // ROLLBACK TO SAVEPOINT is allowed in aborted state and clears it.
+                        try {
+                            await trx.raw(`ROLLBACK TO SAVEPOINT ${spName}`);
+                            await trx.raw(`RELEASE SAVEPOINT ${spName}`);
+                        } catch (spErr) {
+                            debug('savepoint rollback failed', spErr.message);
+                        }
+                    }
                     this.handleError(err, obj);
                 }
             });

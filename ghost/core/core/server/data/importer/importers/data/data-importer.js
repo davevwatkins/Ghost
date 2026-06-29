@@ -5,6 +5,7 @@ const {IncorrectUsageError} = require('@tryghost/errors');
 const debug = require('@tryghost/debug')('importer:data');
 const {sequence} = require('@tryghost/promise');
 const models = require('../../../../models');
+const {getCurrentSiteId} = require('../../../../services/multitenancy/current-site');
 const PostsImporter = require('./posts-importer');
 const TagsImporter = require('./tags-importer');
 const SettingsImporter = require('./settings-importer');
@@ -18,7 +19,6 @@ const RevueSubscriberImporter = require('./revue-subscriber-importer');
 const RolesImporter = require('./roles-importer');
 const {slugify} = require('@tryghost/string/lib');
 
-let importers = {};
 let DataImporter;
 
 DataImporter = {
@@ -31,19 +31,23 @@ DataImporter = {
     },
 
     init: function init(importData) {
-        importers.users = new UsersImporter(importData.data);
-        importers.roles = new RolesImporter(importData.data);
-        importers.tags = new TagsImporter(importData.data);
-        importers.newsletters = new NewslettersImporter(importData.data);
-        importers.settings = new SettingsImporter(importData.data);
-        importers.products = new ProductsImporter(importData.data);
-        importers.stripe_products = new StripeProductsImporter(importData.data);
-        importers.stripe_prices = new StripePricesImporter(importData.data);
-        importers.posts = new PostsImporter(importData.data);
-        importers.custom_theme_settings = new CustomThemeSettingsImporter(importData.data);
-        importers.revue_subscribers = new RevueSubscriberImporter(importData.data);
-
-        return importData;
+        // Return a NEW importers object each call — NOT stored on `this` or
+        // a module-level variable. The old module-level `importers` singleton
+        // caused concurrent import jobs (fastq concurrency=3) to overwrite
+        // each other's importer state, mixing up data across sites.
+        return {
+            users: new UsersImporter(importData.data),
+            roles: new RolesImporter(importData.data),
+            tags: new TagsImporter(importData.data),
+            newsletters: new NewslettersImporter(importData.data),
+            settings: new SettingsImporter(importData.data),
+            products: new ProductsImporter(importData.data),
+            stripe_products: new StripeProductsImporter(importData.data),
+            stripe_prices: new StripePricesImporter(importData.data),
+            posts: new PostsImporter(importData.data),
+            custom_theme_settings: new CustomThemeSettingsImporter(importData.data),
+            revue_subscribers: new RevueSubscriberImporter(importData.data)
+        };
     },
 
     // Allow importing with an options object that is passed through the importer
@@ -119,10 +123,29 @@ DataImporter = {
             }));
         }
 
-        this.init(importData);
+        // Local importers object — not stored on a shared property so concurrent
+        // import jobs (fastq concurrency=3) each get their own isolated state.
+        const importers = this.init(importData);
 
         return models.Base.transaction(async function (transacting) {
             modelOptions.transacting = transacting;
+
+            // Defense-in-depth: explicitly stamp the correct site GUC on the
+            // transaction connection. The acquireConnection pool hook does this
+            // at checkout time, but with concurrency=3 in the inline job queue
+            // multiple import jobs run simultaneously and AsyncLocalStorage
+            // context can race between them. importOptions.siteIdForImport is
+            // the captured siteId threaded explicitly through import-manager.js
+            // and is authoritative over the async context read. SET LOCAL
+            // (is_local=true) scopes the GUC to this transaction only.
+            const importSiteId = importOptions.siteIdForImport || getCurrentSiteId();
+            if (importSiteId) {
+                await transacting.raw("SELECT set_config('app.site_id', ?, true)", [importSiteId]);
+                // Thread siteIdForImport through modelOptions so Bookshelf's onCreating
+                // event handler can read it even when AsyncLocalStorage context is lost
+                // inside Bluebird's mapSeries (which doesn't propagate async context).
+                modelOptions.siteIdForImport = importSiteId;
+            }
 
             _.each(importers, function (importer) {
                 ops.push(async function doModelImport() {

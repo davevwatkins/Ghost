@@ -207,3 +207,5 @@ minimumReleaseAgeExclude:
   - "ghost-storage-base"
   - "gscan"
   - "knex-migrator"
+patchedDependencies:
+  knex-migrator@5.3.2: patches/knex-migrator@5.3.2.patch

@@ -15,14 +15,14 @@ const controller = {
         async query() {
             TinybirdServiceWrapper.init();
             const tokenData = TinybirdServiceWrapper.instance?.getToken() ?? null;
-            
+
             if (tokenData?.exp) {
                 return {
                     token: tokenData.token,
                     exp: new Date(tokenData.exp * 1000).toISOString()
                 };
             }
-            
+
             return tokenData;
         }
     }

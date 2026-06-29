@@ -185,6 +185,11 @@ module.exports = {
         return apiFramework.pipeline(require('./site'), localUtils);
     },
 
+    // TownBrief multitenancy Phase 5a: site picker endpoint.
+    get sites() {
+        return apiFramework.pipeline(require('./sites'), localUtils);
+    },
+
     get snippets() {
         return apiFramework.pipeline(require('./snippets'), localUtils);
     },

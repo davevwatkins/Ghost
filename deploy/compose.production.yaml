@@ -20,6 +20,10 @@ services:
       # Bind all interfaces so Caddy (separate container) can reach Ghost over the network.
       server__host: "0.0.0.0"
       server__port: "2368"
+      # Ghost 6 emails a 2FA code on staff login from a new device. With no working
+      # mail provider (DO blocks SMTP), that code can't be delivered and login stalls.
+      # Disable device verification until email is configured, then set back to true.
+      security__staffDeviceVerification: "false"
       database__client: mysql
       database__connection__host: mysql
       database__connection__user: ${MYSQL_USER}

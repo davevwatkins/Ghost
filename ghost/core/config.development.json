@@ -1,3 +1,6 @@
 {
-    "enableDeveloperExperiments": true
+    "enableDeveloperExperiments": true,
+    "security": {
+        "staffDeviceVerification": false
+    }
 }

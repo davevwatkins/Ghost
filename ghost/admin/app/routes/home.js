@@ -17,14 +17,14 @@ export default class HomeRoute extends AuthenticatedRoute {
             if (this.session.user?.isOwnerOnly) {
                 await this.onboarding.startChecklist();
             }
-            window.location.hash = '/setup/onboarding?returnTo=/analytics';
+            window.location.hash = '/setup/onboarding?returnTo=/dashboard';
             return;
         }
 
         if (this.session.user?.isAdmin) {
-            this.router.transitionTo('/analytics');
+            this.router.transitionTo('react-fallback', 'analytics');
         } else if (this.session.user?.isContributor) {
-            this.router.transitionTo('posts');
+            this.router.transitionTo('posts', {queryParams: {type: 'published'}});
         } else {
             this.router.transitionTo('site');
         }

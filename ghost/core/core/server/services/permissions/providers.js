@@ -23,6 +23,21 @@ module.exports = {
                     return Promise.reject(new errors.UnauthorizedError());
                 }
 
+                // TownBrief multitenancy Phase 5d.1: superadmin bypass.
+                // A user flagged `is_superadmin: true` (Phase 5a) gets a
+                // synthetic Owner role injected so `setIsRoles()` returns
+                // isOwner=true and the request short-circuits without
+                // needing the explicit permissions_roles linkage. This is
+                // the cross-site SSO contract: superadmins act as Owner
+                // on every site they touch.
+                if (foundUser.get('is_superadmin')) {
+                    const syntheticOwner = {id: 'superadmin-synthetic', name: 'Owner'};
+                    return {
+                        permissions: [],
+                        roles: [syntheticOwner]
+                    };
+                }
+
                 const seenPerms = {};
 
                 const rolePerms = _.map(foundUser.related('roles').models, function (role) {

@@ -114,11 +114,10 @@ class PostsImporter extends BaseImporter {
      * Replace all identifier references.
      */
     replaceIdentifiers() {
-        const ownerUserId = _.find(this.requiredExistingData.users, (user) => {
-            if (user.roles[0].name === 'Owner') {
-                return true;
-            }
-        }).id;
+        const ownerUser = _.find(this.requiredExistingData.users, (user) => {
+            return user.roles && user.roles[0] && user.roles[0].name === 'Owner';
+        });
+        const ownerUserId = ownerUser ? ownerUser.id : null;
 
         const run = (postToImport, postIndex, targetProperty, tableName) => {
             if (!postToImport[targetProperty] || !postToImport[targetProperty].length) {

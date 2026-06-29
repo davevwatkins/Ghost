@@ -21,7 +21,16 @@ const externalPlugin = ({externals}: { externals: Record<string, string> }): Plu
             if (originalId) {
                 const module = await import(originalId);
 
-                return Object.keys(module).map(key => (key === 'default' ? `export default ${externalName};` : `export const ${key} = ${externalName}.${key};`)).join('\n');
+                // CJS interop (Node 22 ESM wrapper) exposes synthetic
+                // keys like `module.exports` and `__esModule` on the
+                // namespace object. Skipping non-identifier keys keeps
+                // the generated JS valid; skipping the CJS-only ones
+                // avoids re-exporting nothing useful.
+                const isValidIdentifier = (k: string) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k);
+                return Object.keys(module)
+                    .filter(key => key === 'default' || (isValidIdentifier(key) && key !== '__esModule'))
+                    .map(key => (key === 'default' ? `export default ${externalName};` : `export const ${key} = ${externalName}.${key};`))
+                    .join('\n');
             }
         }
     };
