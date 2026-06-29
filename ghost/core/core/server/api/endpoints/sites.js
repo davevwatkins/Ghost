@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const db = require('../../data/db');
 const models = require('../../models');
 const errors = require('@tryghost/errors');
@@ -36,6 +37,14 @@ function defaultSettingsRowsFor(siteId) {
             const def = group[key];
             const type = def.type || 'string';
             let value = def.defaultValue;
+            // site_uuid is the per-site analytics-isolation key for Tinybird
+            // and MUST be unique per site. default-settings.json defaults it to
+            // null and the boot-time fallback reuses one cached UUID across
+            // sites, so mint a fresh one here at provision time (matches
+            // scripts/townbrief-add-site.js).
+            if (key === 'site_uuid') {
+                value = crypto.randomUUID();
+            }
             if (value === undefined) value = null;
             // Stringify object/array defaults the same way Ghost's fixture
             // manager does — settings are stored as text.
