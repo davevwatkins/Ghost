@@ -27,6 +27,11 @@ RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY components ./components
+# Patch files referenced by patchedDependencies in pnpm-workspace.yaml. MUST be
+# present before `pnpm install` below, or the Postgres-compat patches (knex-migrator
+# migrations_lock 42P16, bookshelf pg fixes) silently don't apply and a fresh
+# Postgres init crashes. pack.js always creates this dir in the deploy context.
+COPY patches ./patches
 
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,id=pnpm-store \
     apt-get update && \

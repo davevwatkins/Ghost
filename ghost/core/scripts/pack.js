@@ -82,7 +82,7 @@ const workspaceSrc = path.join(ROOT_DIR, 'pnpm-workspace.yaml');
 const workspaceDst = path.join(DEPLOY_DIR, 'pnpm-workspace.yaml');
 const rootWorkspace = yaml.load(fs.readFileSync(workspaceSrc, 'utf8'));
 const deployWorkspace = {};
-for (const key of ['catalog', 'catalogs', 'allowBuilds', 'strictDepBuilds', 'overrides', 'packageExtensions']) {
+for (const key of ['catalog', 'catalogs', 'allowBuilds', 'strictDepBuilds', 'overrides', 'packageExtensions', 'patchedDependencies']) {
     if (rootWorkspace[key] !== undefined) {
         deployWorkspace[key] = rootWorkspace[key];
     }
@@ -95,7 +95,21 @@ for (const key of ['catalog', 'catalogs', 'allowBuilds', 'strictDepBuilds', 'ove
 deployWorkspace.minimumReleaseAge = 0;
 fs.writeFileSync(workspaceDst, yaml.dump(deployWorkspace));
 
-console.log('Wrote trimmed pnpm-workspace.yaml (catalogs + overrides + allowBuilds, age check off)');
+console.log('Wrote trimmed pnpm-workspace.yaml (catalogs + overrides + allowBuilds + patchedDependencies, age check off)');
+
+// Carry the patch files referenced by patchedDependencies into the deploy dir.
+// Without them the standalone `pnpm install` (in Dockerfile.production) silently
+// drops every patch — the Postgres-compat patches (knex-migrator's 42P16 lock
+// fix, the bookshelf pg fixes) would be MISSING from the published image, and a
+// fresh Postgres init crashes on the migrations_lock primary key. Always create
+// the dir so the Dockerfile's `COPY patches` succeeds even with no patch files.
+const patchesSrc = path.join(ROOT_DIR, 'patches');
+const patchesDst = path.join(DEPLOY_DIR, 'patches');
+fs.mkdirSync(patchesDst, {recursive: true});
+if (fs.existsSync(patchesSrc)) {
+    fsExtra.copySync(patchesSrc, patchesDst);
+    console.log('Copied patches/ into deploy dir (for patchedDependencies install)');
+}
 
 // Pack private workspace packages as component tarballs.
 // These are not on npm, so ghost-cli can't install them from the registry.
