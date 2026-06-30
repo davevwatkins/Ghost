@@ -4,5 +4,9 @@
 *.json text eol=lf
 *.yml text eol=lf
 *.hbs text eol=lf
+# Shell scripts MUST stay LF: they run as Linux Docker entrypoints/commands, and a
+# CRLF shebang makes `exec /home/ghost/entrypoint.sh` fail with "no such file or
+# directory". Without this rule, core.autocrlf=true rewrites them to CRLF on checkout.
+*.sh text eol=lf
 
 .github/workflows/*.lock.yml linguist-generated=true merge=ours

@@ -1,0 +1,19 @@
+# Caddy with a DNS-provider plugin, for WILDCARD *.townbrief.com TLS via DNS-01.
+#
+# Why a custom image: stock caddy:2 ships no DNS plugins. We need a wildcard cert
+# (one cert for every town subdomain), and wildcards can only be issued via the
+# DNS-01 ACME challenge — which requires a plugin for the DNS provider that hosts
+# townbrief.com. (Per-subdomain HTTP-01 would also work mechanically but would exceed
+# Let's Encrypt's ~50 certs/week per registered domain once there are dozens of towns.)
+#
+# Default provider: Cloudflare (free, reliable for ACME). To use a different provider,
+# replace the xcaddy module below with the matching caddy-dns plugin
+# (https://github.com/caddy-dns) and update the `dns` directive in deploy/Caddyfile.
+ARG CADDY_VERSION=2.8.4
+
+FROM caddy:${CADDY_VERSION}-builder AS builder
+RUN xcaddy build \
+    --with github.com/caddy-dns/cloudflare
+
+FROM caddy:${CADDY_VERSION}
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy

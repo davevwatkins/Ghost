@@ -1,0 +1,17 @@
+diff --git a/lib/bookshelf-pagination.js b/lib/bookshelf-pagination.js
+index fb15a8c19e72ea000140fa7c1d30c0a6b7636dbd..83ae8ac48129150fac3e99eab5b7e5dc8e6469c7 100644
+--- a/lib/bookshelf-pagination.js
++++ b/lib/bookshelf-pagination.js
+@@ -225,6 +225,12 @@ const pagination = function pagination(bookshelf) {
+                 }
+ 
+                 countQuery.clear('select');
++                // TownBrief multitenancy (Postgres): strip any inherited ORDER BY from the
++                // count(*) clone. A base query that carries a raw ORDER BY (CTE queries which
++                // pass ordering via whereRaw/orderRaw, e.g. members link-click events) leaks it
++                // into this count, and Postgres rejects `count(*) ... ORDER BY <non-aggregated
++                // column>` (MySQL tolerates it). A count never needs ordering. See TOWNBRIEF-CHANGES.md.
++                countQuery.clear('order');
+                 // Skipping distinct for simple queries where we know result rows are unique.
+                 const queryHasMultiTableSource = hasMultiTableSource(countQuery);
+                 if (options.useBasicCount || (options.useSmartCount && !queryHasMultiTableSource)) {

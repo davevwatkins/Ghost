@@ -13,6 +13,7 @@
     <div class="text-gray-400 text-sm mt-1">Superadmin Dashboard</div>
   </div>
   <form method="POST" action="/login" class="bg-gray-900 rounded-xl p-8 shadow-2xl border border-gray-800">
+    <input type="hidden" name="return" id="return-field">
     <h1 class="text-white text-lg font-semibold mb-6">Sign in</h1>
     <div id="error-msg" class="hidden mb-4 text-sm text-red-400 bg-red-950 border border-red-800 rounded-lg px-4 py-3">
       Incorrect username or password.
@@ -36,9 +37,12 @@
   </form>
 </div>
 <script>
-  if (location.search.includes('error=1')) {
+  var params = new URLSearchParams(location.search);
+  if (params.get('error') === '1') {
     document.getElementById('error-msg').classList.remove('hidden');
   }
+  // Carry the post-login destination (e.g. an /sso/<slug> auto-login) through the form.
+  document.getElementById('return-field').value = params.get('return') || '/';
 </script>
 </body>
 </html>

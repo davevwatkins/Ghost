@@ -26,7 +26,7 @@ class BaseSiteMapGenerator {
         return Boolean(datum?.canonical_url);
     }
 
-    generateXmlFromNodes(page) {
+    generateXmlFromNodes(page, baseUrl) {
         // Get a mapping of node to timestamp
         let nodesToProcess = _.map(this.nodeLookup, (node, id) => {
             return {
@@ -36,6 +36,16 @@ class BaseSiteMapGenerator {
                 node: node
             };
         });
+
+        // TownBrief multitenancy: this generator is a global singleton shared by every
+        // tenant, so keep only nodes belonging to the active site to stop one town's
+        // sitemap leaking another town's URLs.
+        if (baseUrl) {
+            nodesToProcess = nodesToProcess.filter((entry) => {
+                const loc = entry.node && entry.node.url && entry.node.url[0] && entry.node.url[0].loc;
+                return localUtils.locBelongsToSite(loc, baseUrl);
+            });
+        }
 
         // Sort nodes by timestamp
         nodesToProcess = _.sortBy(nodesToProcess, 'ts');
@@ -178,12 +188,17 @@ class BaseSiteMapGenerator {
     }
 
     getXml(page = 1) {
-        if (this.siteMapContent.has(page)) {
-            return this.siteMapContent.get(page);
+        // TownBrief multitenancy: scope to the active site and cache PER-SITE, so one
+        // tenant's filtered XML isn't served to another. siteMapContent.clear() on
+        // add/remove still invalidates every site's cached page.
+        const baseUrl = localUtils.getActiveSiteBaseUrl();
+        const cacheKey = `${baseUrl || ''}::${page}`;
+        if (this.siteMapContent.has(cacheKey)) {
+            return this.siteMapContent.get(cacheKey);
         }
 
-        const content = this.generateXmlFromNodes(page);
-        this.siteMapContent.set(page, content);
+        const content = this.generateXmlFromNodes(page, baseUrl);
+        this.siteMapContent.set(cacheKey, content);
         return content;
     }
 

@@ -1,6 +1,13 @@
 FROM caddy:2-alpine@sha256:77c07d5ebfa5be9fd6c820d2094ae662c9e7eeb9bf98346b7f639900263ee2a2
 
-RUN caddy add-package github.com/caddyserver/transform-encoder
+# transform-encoder: compact dev logs.
+# cache-handler (Souin): edge response cache — see deploy/EDGE-CACHING.md. Gated in the
+#   Caddyfile by {$WP_EDGE_CACHE:false} so normal dev stays uncached (toggle on to test).
+# caddy-ratelimit: gateway concurrency/rate cap (also toggle-gated).
+RUN caddy add-package \
+    github.com/caddyserver/transform-encoder \
+    github.com/caddyserver/cache-handler \
+    github.com/mholt/caddy-ratelimit
 
 # Default proxy targets (can be overridden via environment variables)
 ENV GHOST_BACKEND=ghost-dev:2368 \

@@ -28,9 +28,9 @@ const Redirect = ghostBookshelf.Model.extend({
 }, {
     orderDefaultRaw(options) {
         if (options.withRelated && options.withRelated.includes('count.clicks')) {
-            return '`count__clicks` DESC, `to` DESC';
+            return '"count__clicks" DESC, "to" DESC';
         }
-        return '`to` DESC';
+        return '"to" DESC';
     },
 
     permittedOptions(methodName) {

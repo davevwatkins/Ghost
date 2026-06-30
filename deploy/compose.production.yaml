@@ -1,79 +1,197 @@
-# TownBrief — production stack for the forked Ghost.
-# Run on an Ubuntu VPS (GoDaddy "Servers"/VPS, DigitalOcean, etc.) with Docker installed.
-#   cp .env.example .env   # then edit secrets
+# TownBrief — PRODUCTION stack for the MULTITENANT (Postgres + RLS) Ghost fork.
+# Replaces the legacy single-tenant MySQL stack. ONE Node process serves every town
+# and county as <slug>.townbrief.com; adding a town is an INSERT into `sites`, not a
+# new container. See deploy/MULTITENANCY.md and deploy/README.md.
+#
+#   git clone <repo> && cd <repo>/deploy
+#   cp .env.example .env        # fill Postgres + Cloudflare token + SMTP secrets
 #   docker compose -f compose.production.yaml up -d
 #
-# Ghost runtime is configured entirely via env vars (Ghost reads `database__*`,
-# `mail__*`, `url` from the environment when NODE_ENV=production).
+# Paths are relative to this file (deploy/), so the FULL repo must be present on the
+# server (the postgres-init script + Caddyfile + Dockerfile.caddy live in the tree).
+# Ghost is configured entirely via env (database__*, mail__*, url) under NODE_ENV=production.
+name: townbrief-prod
+
 services:
+  postgres:
+    image: postgres:17-alpine
+    restart: always
+    # Bound memory/CPU so a heavy query or connection storm can't OOM the host. Keep
+    # above shared_buffers (512MB) + work_mem*connections headroom. Raise for big boxes.
+    mem_limit: ${POSTGRES_MEM_LIMIT:-2g}
+    cpus: ${POSTGRES_CPUS:-2}
+    # RLS + partition-by-site_id are load-bearing for the multitenant model.
+    # Tune for the host: these suit ~4-8 GB. Raise shared_buffers/effective_cache_size
+    # for bigger boxes. wal_level=logical is required for per-tenant logical replication.
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c work_mem=8MB
+      -c maintenance_work_mem=128MB
+      -c effective_cache_size=1536MB
+      -c max_connections=100
+      -c wal_level=logical
+    environment:
+      # Bootstrap SUPERUSER — ops/migrations only. Ghost does NOT connect as this.
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      # Phase 1.5c: Ghost connects as this NON-super role so RLS actually enforces
+      # (Postgres bypasses RLS for superusers, even with FORCE). Created by the init
+      # script on fresh init; for an existing volume run it once via docker exec.
+      GHOST_APP_USER: ${GHOST_APP_USER}
+      GHOST_APP_PASSWORD: ${GHOST_APP_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    # Not published to the host — internal Docker network only.
+
+  redis:
+    image: redis:7.0-alpine
+    restart: always
+    # Ghost uses Redis as its cache adapter — bound it so it evicts LRU instead of
+    # growing unbounded. Keep mem_limit >= ~2x maxmemory to allow the RDB-snapshot fork.
+    command: ["redis-server", "--maxmemory", "${REDIS_MAXMEM:-512mb}", "--maxmemory-policy", "allkeys-lru"]
+    mem_limit: ${REDIS_MEM_LIMIT:-1g}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
   ghost:
-    # Built & published by .github/workflows/townbrief-image.yml (pull from GHCR),
-    # or build locally with deploy/build-image.sh and set GHOST_IMAGE=townbrief-ghost:local
+    # Built & pushed by .github/workflows/townbrief-image.yml (GHCR), or build locally
+    # with deploy/build-image.sh and set GHOST_IMAGE=townbrief-ghost:local. The image
+    # bakes the pnpm patches (knex-migrator + bookshelf) required to run on Postgres.
     image: ${GHOST_IMAGE:-ghcr.io/davevwatkins/ghost:latest}
     restart: always
+    # Stability under load: bound memory so a spike OOM-restarts this container
+    # predictably (restart: always) instead of thrashing/OOM-killing the whole host,
+    # and cap CPU so one busy tenant can't starve the box. SIZE TO THE SERVER — the
+    # in-memory all-tenants state grows with tenant count; monitor RSS and raise these,
+    # or pursue lazy per-site state (the real fix). Override via .env.
+    mem_limit: ${GHOST_MEM_LIMIT:-3g}
+    mem_reservation: ${GHOST_MEM_RESERVATION:-1g}
+    cpus: ${GHOST_CPUS:-2}
     depends_on:
-      mysql:
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      url: ${GHOST_URL}
-      # Bind all interfaces so Caddy (separate container) can reach Ghost over the network.
+      # Cap the V8 heap BELOW mem_limit (~1.5x headroom) so Node throws/OOMs cleanly and
+      # restarts, rather than the kernel OOM-killing it mid-request. Keep in sync with mem_limit.
+      NODE_OPTIONS: "--max-old-space-size=${GHOST_NODE_HEAP_MB:-2048}"
+      database__client: pg
+      database__connection__host: postgres
+      database__connection__port: "5432"
+      # Non-super runtime role (RLS-enforced). Migrations also run as this role (it owns
+      # the public schema — see docker/postgres-init/01-ghost-app-role.sh).
+      database__connection__user: ${GHOST_APP_USER}
+      database__connection__password: ${GHOST_APP_PASSWORD}
+      database__connection__database: ${POSTGRES_DB}
+      # Bind all interfaces so Caddy can reach Ghost across the Docker network.
       server__host: "0.0.0.0"
       server__port: "2368"
-      # Ghost 6 emails a 2FA code on staff login from a new device. With no working
-      # mail provider (DO blocks SMTP), that code can't be delivered and login stalls.
-      # Disable device verification until email is configured, then set back to true.
-      security__staffDeviceVerification: "false"
-      database__client: mysql
-      database__connection__host: mysql
-      database__connection__user: ${MYSQL_USER}
-      database__connection__password: ${MYSQL_PASSWORD}
-      database__connection__database: ${MYSQL_DATABASE}
-      # Transactional mail (member magic-link login, staff invites).
-      # NOTE: bulk newsletters require a Mailgun account configured in Ghost Admin.
+      # Externally-reachable base URL. In a multitenant install each tenant's URL is
+      # derived per-request from the `sites` table (Phase 4b); this is the fallback +
+      # admin origin. Use the apex or the primary pub host.
+      url: ${GHOST_PUBLIC_URL}
+      adapters__cache__Redis__host: redis
+      adapters__cache__Redis__port: "6379"
+      # Transactional mail (member magic-link login, staff invites). Bulk newsletters
+      # use a Mailgun account configured per-site in Ghost Admin.
       mail__transport: SMTP
       mail__from: ${MAIL_FROM}
       mail__options__host: ${SMTP_HOST}
       mail__options__port: ${SMTP_PORT}
       mail__options__auth__user: ${SMTP_USER}
       mail__options__auth__pass: ${SMTP_PASS}
+      # Ghost 6 emails a 2FA code on staff login from a new device; until SMTP is
+      # verified working that stalls login. Flip to "true" once mail is confirmed.
+      security__staffDeviceVerification: "false"
     volumes:
       - ghost-content:/home/ghost/content
-    # No published ports — Caddy reverse-proxies to it on the internal network.
-
-  mysql:
-    image: mysql:8.4
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    command: ["--innodb-buffer-pool-size=256M"]
-    volumes:
-      - mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p$$MYSQL_ROOT_PASSWORD"]
-      interval: 10s
+      test: ["CMD", "node", "-e", "fetch('http://localhost:2368',{redirect:'manual'}).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
       timeout: 5s
       retries: 10
+      start_period: 60s
+    # No published ports — Caddy reverse-proxies on the internal network.
+
+  # Superadmin dashboard + single-sign-on identity provider (superadmin.townbrief.com).
+  # Reads across ALL tenants (connects as the Postgres SUPER user, bypassing RLS) and
+  # mints cross-site SSO tokens so ONE login covers every town. No published ports —
+  # Caddy reverse-proxies it. The *.townbrief.com wildcard cert + DNS already cover
+  # superadmin.townbrief.com, so no extra DNS record is needed.
+  superadmin:
+    build:
+      context: ../docker/superadmin
+      dockerfile: Dockerfile
+    image: ${SUPERADMIN_IMAGE:-townbrief-superadmin:local}
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      # SUPER user — the dashboard/SSO must see every tenant (Ghost connects as the
+      # non-super ghost_app role; the superadmin intentionally bypasses RLS).
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      # Default-site host (dashboard links + SSO secret source).
+      GHOST_ADMIN_HOST: ${SUPERADMIN_GHOST_HOST:-middlesexcounty.townbrief.com}
+      ADMIN_USER: ${SUPERADMIN_USER:-admin}
+      ADMIN_PASS: ${SUPERADMIN_PASS}
+      SESSION_SECRET: ${SUPERADMIN_SESSION_SECRET}
+      PORT: "3001"
 
   caddy:
-    image: caddy:2
+    # Custom build: stock caddy:2 ships no DNS plugins, and wildcard *.townbrief.com
+    # needs DNS-01 (see deploy/Dockerfile.caddy + README "Why wildcard / DNS-01").
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+    image: ${CADDY_IMAGE:-townbrief-caddy:local}
     restart: always
-    depends_on: [ghost]
+    depends_on:
+      ghost:
+        condition: service_healthy
+      superadmin:
+        condition: service_started
     ports:
       - "80:80"
       - "443:443"
     environment:
-      GHOST_DOMAIN: ${GHOST_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+      # Token for the DNS provider hosting townbrief.com (Cloudflare by default).
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./site:/srv/site:ro          # apex landing page (townbrief.com)
       - caddy-data:/data
       - caddy-config:/config
 
 volumes:
+  postgres-data:
+  redis-data:
   ghost-content:
-  mysql-data:
   caddy-data:
   caddy-config:
+
+networks:
+  default:
+    name: townbrief_prod

@@ -126,7 +126,10 @@ app.use(session({
 function requireAuth(req, res, next) {
     if (req.session.authenticated) return next();
     if (req.path.startsWith('/api/')) return res.status(401).json({error: 'Not authenticated'});
-    res.redirect('/login');
+    // Preserve where the user was headed (e.g. an /sso/<slug> auto-login) so we
+    // can return there after a single superadmin login — this is what makes
+    // "log in once, visit any site" work.
+    res.redirect('/login?return=' + encodeURIComponent(req.originalUrl));
 }
 
 // Login page
@@ -135,11 +138,14 @@ app.get('/login', (req, res) => {
 });
 
 app.post('/login', (req, res) => {
+    const ret = (typeof req.body.return === 'string' && req.body.return) || '/';
+    // Only allow local same-app redirects (no protocol-relative // or absolute URLs).
+    const safeReturn = /^\/(?!\/)/.test(ret) ? ret : '/';
     if (req.body.username === ADMIN_USER && req.body.password === ADMIN_PASS) {
         req.session.authenticated = true;
-        res.redirect('/');
+        res.redirect(safeReturn);
     } else {
-        res.redirect('/login?error=1');
+        res.redirect('/login?error=1&return=' + encodeURIComponent(safeReturn));
     }
 });
 
@@ -223,6 +229,50 @@ app.get('/api/content', requireAuth, async (req, res) => {
 
         const posts = rows.map(r => ({...r, county: COUNTY_LOOKUP[r.site_slug] || null}));
         res.json({posts, total: parseInt(countRows[0].count)});
+    } catch (err) {
+        res.status(500).json({error: err.message});
+    }
+});
+
+// GET /api/members — cross-site member browser (so the launcher fully replaces the
+// native admin's Members section, which 404s on the stale React build).
+app.get('/api/members', requireAuth, async (req, res) => {
+    try {
+        const {q, site, county, status, page} = req.query;
+        const offset = (parseInt(page || 1) - 1) * 40;
+        const params = [];
+        const conditions = ["s.slug != 'default'"];
+
+        if (site) {
+            params.push(site); conditions.push(`s.slug = $${params.length}`);
+        } else if (county) {
+            const slugs = Object.entries(COUNTY_LOOKUP).filter(([,c]) => c === county).map(([sl]) => sl);
+            if (slugs.length) { params.push(slugs); conditions.push(`s.slug = ANY($${params.length})`); }
+        }
+        if (status && status !== 'all') { params.push(status); conditions.push(`m.status = $${params.length}`); }
+        if (q) { params.push(`%${q}%`); conditions.push(`(m.email ILIKE $${params.length} OR m.name ILIKE $${params.length})`); }
+
+        const where = conditions.join(' AND ');
+        params.push(40, offset);
+
+        const {rows} = await pool.query(`
+            SELECT m.id, m.email, m.name, m.status, m.created_at,
+                   s.slug AS site_slug, s.name AS site_name
+            FROM members m
+            JOIN sites s ON m.site_id = s.id
+            WHERE ${where}
+            ORDER BY m.created_at DESC
+            LIMIT $${params.length - 1} OFFSET $${params.length}
+        `, params);
+
+        const countParams = params.slice(0, -2);
+        const {rows: countRows} = await pool.query(
+            `SELECT COUNT(*) FROM members m JOIN sites s ON m.site_id = s.id WHERE ${where}`,
+            countParams
+        );
+
+        const members = rows.map(r => ({...r, county: COUNTY_LOOKUP[r.site_slug] || null}));
+        res.json({members, total: parseInt(countRows[0].count)});
     } catch (err) {
         res.status(500).json({error: err.message});
     }
@@ -354,7 +404,12 @@ app.get('/sso/:slug', requireAuth, async (req, res) => {
         const nonce = crypto.randomBytes(16).toString('base64url');
         const token = buildSsoToken({userId, targetSiteId, exp, nonce}, secret);
 
-        const redeemUrl = `http://${slug}.localtest.me/ghost/api/admin/session/sso-redeem?token=${encodeURIComponent(token)}`;
+        let redeemUrl = `http://${slug}.localtest.me/ghost/api/admin/session/sso-redeem?token=${encodeURIComponent(token)}`;
+        // Optional deep-link target (e.g. /ghost/#/members) so the launcher can
+        // drop you straight into a section of the target site's admin.
+        if (req.query.next) {
+            redeemUrl += `&next=${encodeURIComponent(req.query.next)}`;
+        }
         res.redirect(302, redeemUrl);
     } catch (err) {
         res.status(500).send(`SSO error: ${err.message}`);

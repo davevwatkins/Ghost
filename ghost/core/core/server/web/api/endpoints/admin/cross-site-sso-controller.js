@@ -122,11 +122,21 @@ async function redeemHandler(req, res, next) {
             });
         }
 
+        // NOTE: do NOT regenerate the session here. Regenerating destroys the
+        // session tied to the browser's current cookie, so re-entering the picker
+        // (or any other open tab on this site) lands on a destroyed session →
+        // req.user unset → 403 → no nav. The session-store fix (look up sessions
+        // outside any site scope) is what actually makes cross-site sessions
+        // resolve; reusing the session here keeps every tab valid.
         await sessionService.createVerifiedSessionForUser(req, res, user);
 
-        // Redirect to the admin UI on this host. Relative path keeps
-        // the same scheme + host (target site).
-        res.redirect(303, '/ghost/');
+        // Redirect to the admin UI on this host. Honour a same-origin `next`
+        // deep-link target (e.g. /ghost/#/members) so the superadmin launcher can
+        // land you directly on a section; default to /ghost/. Validated to a
+        // /ghost/ path to prevent open redirects.
+        const next = req.query && req.query.next;
+        const target = (typeof next === 'string' && /^\/ghost\//.test(next)) ? next : '/ghost/';
+        res.redirect(303, target);
     } catch (err) {
         next(err);
     }

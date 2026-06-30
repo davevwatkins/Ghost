@@ -15,11 +15,25 @@ class MembersStats {
     }
 
     /**
+     * Normalizes a `knex.raw` COUNT(...) result to a number across DB clients.
+     * Postgres returns {rows:[{total}]} (and COUNT comes back as a bigint string,
+     * hence Number()); MySQL returns [rows, fields] (so result[0][0]); SQLite
+     * returns [rows] (so result[0]). Without the Postgres branch, result[0] is
+     * undefined and result[0][0] throws "Cannot read properties of undefined".
+     */
+    _totalFromRaw(result) {
+        if (result && result.rows) {
+            return Number(result.rows[0].total);
+        }
+        return this._isSQLite ? result[0].total : result[0][0].total;
+    }
+
+    /**
      * Fetches count of all members
      */
     async getTotalMembers() {
         const result = await this._db.knex.raw('SELECT COUNT(id) AS total FROM members');
-        return this._isSQLite ? result[0].total : result[0][0].total;
+        return this._totalFromRaw(result);
     }
 
     /**
@@ -35,7 +49,7 @@ class MembersStats {
 
         const startOfRange = moment.tz(siteTimezone).subtract(days - 1, 'days').startOf('day').utc().format(dateFormat);
         const result = await this._db.knex.raw('SELECT COUNT(id) AS total FROM members WHERE created_at >= ?', [startOfRange]);
-        return this._isSQLite ? result[0].total : result[0][0].total;
+        return this._totalFromRaw(result);
     }
 
     /**
@@ -46,7 +60,7 @@ class MembersStats {
     async getNewMembersToday({siteTimezone}) {
         const startOfToday = moment.tz(siteTimezone).startOf('day').utc().format(dateFormat);
         const result = await this._db.knex.raw('SELECT count(id) AS total FROM members WHERE created_at >= ?', [startOfToday]);
-        return this._isSQLite ? result[0].total : result[0][0].total;
+        return this._totalFromRaw(result);
     }
 
     /**

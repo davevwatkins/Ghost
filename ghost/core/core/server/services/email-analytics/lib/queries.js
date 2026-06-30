@@ -21,7 +21,11 @@ async function createJobIfNotExists(jobName) {
         started_at: new Date(),
         created_at: new Date(),
         status: 'started'
-    }).onConflict('name').ignore();
+    // TownBrief multitenancy: `jobs` is site-scoped — the unique index is
+    // (site_id, name), not (name). site_id is stamped by the tb_stamp_site_id
+    // BEFORE INSERT trigger, so the conflict target must match the composite
+    // index or Postgres throws "no unique or exclusion constraint matching".
+    }).onConflict(['site_id', 'name']).ignore();
 }
 
 module.exports = {

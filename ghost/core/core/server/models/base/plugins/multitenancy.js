@@ -98,6 +98,23 @@ module.exports = function multitenancyPlugin(Bookshelf) {
                 debug(`No options.query on ${this.tableName} fetch hook — cannot scope`);
                 return;
             }
+            // CTE-based queries (e.g. the members link-click-events fetch) override
+            // their FROM to a CTE that doesn't expose this table's site_id column, so
+            // a qualified `<tableName>.site_id` filter would reference a table that
+            // isn't in the FROM clause and Postgres errors with "missing FROM-clause
+            // entry for table ...". (The FROM override is applied AFTER this fetch
+            // hook fires, so we cannot detect it from options.query here — but the
+            // caller flags such queries with options.useCTE.) Those CTEs select from
+            // the underlying table, which RLS already scopes by current_site_id(), so
+            // the explicit WHERE is both impossible and unnecessary — skip it and let
+            // RLS (the documented load-bearing backstop) enforce isolation. As a
+            // fallback, also skip when the FROM is already overridden at hook time.
+            const single = options.query._single;
+            const fromTable = single && typeof single.table === 'string' ? single.table : null;
+            if (options.useCTE || (fromTable && fromTable !== this.tableName)) {
+                debug(`Skipping explicit site scope for ${this.tableName} (CTE/custom FROM); RLS enforces isolation`);
+                return;
+            }
             // Qualified column name so joins don't ambiguate `site_id`.
             const col = `${this.tableName}.site_id`;
             options.query.where(col, siteId);

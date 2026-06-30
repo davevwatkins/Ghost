@@ -91,6 +91,12 @@ async function initDatabase({config}) {
     // Same gotcha: the Phase 2c RLS migrations also get skipped on
     // fresh init. Apply RLS idempotently here.
     await ensureRowLevelSecurity();
+
+    // The per-site role seeder clones permissions_roles from the source site;
+    // an under-seeded source historically yielded Owner roles with ZERO
+    // permissions on every tenant, which renders the admin with no left nav.
+    // Backfill idempotently here so a fresh init / new tenant can't reintroduce it.
+    await ensureOwnerRolePermissions();
 }
 
 async function ensureRowLevelSecurity() {
@@ -116,6 +122,24 @@ async function ensureRowLevelSecurity() {
             $$;
         `);
 
+        // townbrief_stamp_site_id() — stamps site_id from the active-site GUC on
+        // raw/bulk/pivot inserts that bypass the Phase 3 model-layer scoping
+        // (members_newsletters, email_recipients, …) so they satisfy the RLS
+        // WITH CHECK. No-op when site_id is already a real site, or in system
+        // scope (GUC unset). See TOWNBRIEF-CHANGES.md.
+        await knex.raw(`
+            CREATE OR REPLACE FUNCTION townbrief_stamp_site_id() RETURNS trigger
+                LANGUAGE plpgsql AS $$
+            BEGIN
+                IF (NEW.site_id IS NULL OR NEW.site_id = 'default0000000000000000')
+                   AND current_site_id() IS NOT NULL THEN
+                    NEW.site_id := current_site_id();
+                END IF;
+                RETURN NEW;
+            END;
+            $$;
+        `);
+
         let installed = 0;
         for (const table of tables) {
             const {rows: state} = await knex.raw(
@@ -136,8 +160,78 @@ async function ensureRowLevelSecurity() {
         if (installed > 0) {
             logging.info(`TownBrief: installed/forced RLS on ${installed} site-scoped tables (boot-time check)`);
         }
+
+        // Install the site_id-stamping BEFORE INSERT trigger on every site-scoped
+        // table (idempotent; only creates where missing). Pairs with the RLS
+        // WITH CHECK above so raw/bulk/pivot inserts don't get rejected.
+        const {rows: existingTriggers} = await knex.raw(`
+            SELECT event_object_table FROM information_schema.triggers
+            WHERE trigger_name = 'tb_stamp_site_id' AND trigger_schema = current_schema()
+        `);
+        const tablesWithTrigger = new Set(existingTriggers.map(r => r.event_object_table));
+        let triggersInstalled = 0;
+        for (const table of tables) {
+            if (tablesWithTrigger.has(table)) continue;
+            await knex.raw(`CREATE TRIGGER tb_stamp_site_id BEFORE INSERT ON ${table} FOR EACH ROW EXECUTE FUNCTION townbrief_stamp_site_id()`);
+            triggersInstalled++;
+        }
+        if (triggersInstalled > 0) {
+            logging.info(`TownBrief: installed site_id-stamping trigger on ${triggersInstalled} site-scoped tables (boot-time check)`);
+        }
     } catch (err) {
         require('@tryghost/logging').warn(`ensureRowLevelSecurity skipped: ${err.message}`);
+    }
+}
+
+// TownBrief: ensure every site's Owner role carries the same permissions as its
+// Administrator role. The per-site seeder (services/multitenancy/site-seeders.js)
+// clones permissions_roles from the source site; if that source's Owner role is
+// under-seeded the defect propagates to every tenant and breaks the admin nav.
+// Idempotent: inserts only the permissions an Owner role is missing relative to
+// its sibling Administrator. Runs as the non-super ghost_app role with no active
+// site (GUC unset) → RLS sees all rows; explicit site_id makes the stamp trigger
+// a no-op.
+async function ensureOwnerRolePermissions() {
+    const knex = require('./server/data/db').knex;
+    if (!knex || knex.client.config.client !== 'pg') return;
+    try {
+        // permissions_roles ships with only (id) and (site_id) indexes here, so the
+        // role-scoped anti-join below would seq-scan the whole table per candidate
+        // row and stall boot across many tenants (as ghost_app under RLS the planner
+        // can't hash-anti-join). Ensure a (role_id, permission_id) index first — it
+        // also speeds Ghost's per-role permission lookups generally. Idempotent.
+        await knex.raw(`CREATE INDEX IF NOT EXISTS permissions_roles_role_id_permission_id_index ON permissions_roles (role_id, permission_id)`);
+
+        // Cheap guard: once every Owner role holds at least as many permissions as
+        // its Administrator sibling fleet-wide, there's nothing to backfill — return
+        // immediately rather than run the anti-join INSERT on every boot.
+        const {rows: [counts]} = await knex.raw(`
+            SELECT
+              (SELECT count(*) FROM permissions_roles pr JOIN roles r ON r.id = pr.role_id WHERE r.name = 'Owner') AS owner_total,
+              (SELECT count(*) FROM permissions_roles pr JOIN roles r ON r.id = pr.role_id WHERE r.name = 'Administrator') AS admin_total
+        `);
+        if (Number(counts.owner_total) >= Number(counts.admin_total)) {
+            return;
+        }
+
+        const result = await knex.raw(`
+            INSERT INTO permissions_roles (id, site_id, role_id, permission_id)
+            SELECT substr(replace(gen_random_uuid()::text, '-', ''), 1, 24), o.site_id, o.id, pr.permission_id
+            FROM roles o
+            JOIN roles a ON a.site_id = o.site_id AND a.name = 'Administrator'
+            JOIN permissions_roles pr ON pr.role_id = a.id
+            WHERE o.name = 'Owner'
+              AND NOT EXISTS (
+                  SELECT 1 FROM permissions_roles pr2
+                  WHERE pr2.role_id = o.id AND pr2.permission_id = pr.permission_id
+              )
+        `);
+        const inserted = result && typeof result.rowCount === 'number' ? result.rowCount : 0;
+        if (inserted > 0) {
+            require('@tryghost/logging').info(`TownBrief: backfilled ${inserted} Owner-role permissions across sites (boot-time check)`);
+        }
+    } catch (err) {
+        require('@tryghost/logging').warn(`ensureOwnerRolePermissions skipped: ${err.message}`);
     }
 }
 

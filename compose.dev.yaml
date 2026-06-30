@@ -80,6 +80,14 @@ services:
     container_name: ghost-dev
     working_dir: /home/ghost/ghost/core
     command: ["pnpm", "dev"]
+    # Stability: bound memory so a runaway OOM-restarts predictably instead of growing
+    # unbounded. Idle is ~370MiB for 366 sites, so 3g is generous headroom; the heap cap
+    # (NODE_OPTIONS below) makes Node OOM cleanly under it. The real load crash was
+    # event-loop saturation, not memory — edge caching + the gateway concurrency cap
+    # address that. Lower GHOST_MEM_LIMIT in .env on a small box.
+    mem_limit: ${GHOST_MEM_LIMIT:-3g}
+    mem_reservation: ${GHOST_MEM_RESERVATION:-512m}
+    cpus: ${GHOST_CPUS:-4}
     volumes:
       # Keep the runtime workspace graph aligned with the packages installed
       # by docker/ghost-dev/Dockerfile. Mounting all of ghost/ exposes
@@ -104,6 +112,9 @@ services:
       - shared-config:/mnt/shared-config:ro
     environment:
       NODE_ENV: development
+      # Cap V8 heap under mem_limit so Node OOMs cleanly + nodemon restarts, rather than
+      # the kernel killing it. (Inherited by the nodemon-spawned ghost process.)
+      NODE_OPTIONS: "--max-old-space-size=${GHOST_NODE_HEAP_MB:-2048}"
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
       DEBUG: ${DEBUG:-}
       pnpm_config_verify_deps_before_run: "false"
@@ -154,6 +165,13 @@ services:
       context: ./docker/dev-gateway
       dockerfile: Dockerfile
     container_name: ghost-dev-gateway
+    environment:
+      # Edge-cache toggle (default false -> dev stays uncached). Recreate the gateway with
+      # WP_EDGE_CACHE=true to exercise caching. See deploy/EDGE-CACHING.md.
+      WP_EDGE_CACHE: ${WP_EDGE_CACHE:-false}
+      WP_EDGE_CACHE_TTL: ${WP_EDGE_CACHE_TTL:-60s}
+      WP_EDGE_CACHE_STALE: ${WP_EDGE_CACHE_STALE:-600s}
+      WP_RATE_LIMIT_EVENTS: ${WP_RATE_LIMIT_EVENTS:-100000}
     ports:
       - "2368:80"
       - "80:80"
@@ -162,6 +180,8 @@ services:
     volumes:
       # Mount Caddyfile for live config changes without rebuilding
       - ./docker/dev-gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Apex landing-page preview (townbrief.localtest.me), links rewritten to local towns
+      - ./docker/dev-gateway/preview:/srv/site:ro
     depends_on:
       ghost-dev:
         condition: service_healthy

@@ -1,10 +1,37 @@
 {
     admin off
+
+    # Souin edge cache (cache-handler plugin). Config only — caching is enabled
+    # PER-ROUTE below and ONLY when WP_EDGE_CACHE=on, so normal dev stays uncached.
+    # Cache keys are method+HOST+path → each *.localtest.me tenant is isolated.
+    cache {
+        ttl {$WP_EDGE_CACHE_TTL:60s}
+        stale {$WP_EDGE_CACHE_STALE:600s}
+    }
+}
+
+# Front-end proxy to Ghost — shared by the cache / no-cache handlers below.
+(ghost_proxy) {
+    reverse_proxy {env.GHOST_BACKEND} {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto https
+    }
 }
 
 # TownBrief superadmin dashboard
 superadmin.localtest.me:80 {
     reverse_proxy ghost-dev-superadmin:3001
+}
+
+# TownBrief apex landing-page preview — mirrors production's townbrief.com apex
+# (deploy/site), with town links rewritten to *.localtest.me so click-through hits
+# the local tenants. Lets you see apex + towns behavior before the prod cutover.
+townbrief.localtest.me:80 {
+    root * /srv/site
+    file_server
+    encode gzip
 }
 
 :80 {
@@ -13,6 +40,32 @@ superadmin.localtest.me:80 {
         output stdout
         format transform "{common_log}"
     }
+
+    # Gateway rate cap (caddy-ratelimit). Default threshold is effectively unlimited so it
+    # never bites normal dev or load tests; set WP_RATE_LIMIT_EVENTS low (e.g. 300) to shed
+    # per-IP floods as 429 at the edge instead of saturating Ghost. See deploy/EDGE-CACHING.md.
+    rate_limit {
+        zone tb_perip {
+            key {remote_host}
+            events {$WP_RATE_LIMIT_EVENTS:100000}
+            window 1m
+        }
+    }
+
+    # TownBrief single sign-on ("log in once"): if you open a town's /ghost admin
+    # WITHOUT a Ghost admin session, bounce to the superadmin SSO for that site.
+    # After ONE superadmin login, every town auto-signs-in on visit — no per-site
+    # passwords. Guards against loops via the session cookie + ?sso=1 (the redeem
+    # redirects back to /ghost/?sso=1, by which point the session cookie is set).
+    # `redir` is evaluated before the `handle` blocks below, so it intercepts the
+    # admin HTML entry only (NOT /ghost/api or /ghost/assets, which differ in path).
+    @admin_no_session {
+        host *.localtest.me
+        path /ghost /ghost/
+        not header Cookie *ghost-admin-api-session=*
+        not query sso=1
+    }
+    redir @admin_no_session http://superadmin.localtest.me/sso/{http.request.host.labels.2}?next=%2Fghost%2F%3Fsso%3D1
 
     # Ember live reload (runs on separate port 4201)
     # This handles both the script injection and WebSocket connections
@@ -183,15 +236,15 @@ superadmin.localtest.me:80 {
             }
         }
 
-        # Everything else under /ghost/assets/* goes to admin dev server.
-        # Vite serves admin/Ember assets under its dev base (/__admin-dev__/assets/),
-        # so we rewrite the request before proxying.
-        # Requires `cd apps/admin && pnpm dev` running on the host at port 5174.
+        # Everything else under /ghost/assets/* — serve the BUILT admin from the
+        # Ghost backend (TownBrief: no Vite admin dev server needed; the built
+        # admin ships in the image at core/built/admin). Re-add the /ghost/assets
+        # prefix that strip_prefix above removed.
         handle {
-            rewrite * /__admin-dev__/assets{path}
-            reverse_proxy {env.ADMIN_DEV_SERVER} {
-                header_up Host {http.reverse_proxy.upstream.hostport}
-                header_up X-Forwarded-Host {host}
+            rewrite * /ghost/assets{path}
+            reverse_proxy {env.GHOST_BACKEND} {
+                header_up Host {host}
+                header_up X-Forwarded-Proto https
             }
         }
     }
@@ -234,9 +287,11 @@ superadmin.localtest.me:80 {
     # Requires `cd apps/admin && pnpm dev` running on the host at port 5174.
     @admin_html path /ghost /ghost/
     handle @admin_html {
-        rewrite * /__admin-dev__/
-        reverse_proxy {env.ADMIN_DEV_SERVER} {
-            header_up X-Forwarded-Host {host}
+        reverse_proxy {env.GHOST_BACKEND} {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto https
         }
     }
 
@@ -259,16 +314,41 @@ superadmin.localtest.me:80 {
         }
     }
 
-    # Everything else goes to Ghost backend
-    handle {
+    # Front-end (everything not matched above). TownBrief edge caching, gated by
+    # WP_EDGE_CACHE (default off → normal dev is uncached). See deploy/EDGE-CACHING.md.
+
+    # (1) NEVER cache: member APIs / portal data + link-tracking redirects.
+    @fe_never path /members* /r/*
+    handle @fe_never {
+        import ghost_proxy
+    }
+
+    # (2) Cacheable: ONLY when WP_EDGE_CACHE=on, ANONYMOUS (no member cookie) GET/HEAD.
+    #     {$WP_EDGE_CACHE:false} substitutes to the bare CEL literal true/false at load.
+    @fe_cacheable {
+        expression {$WP_EDGE_CACHE:false}
+        method GET HEAD
+        not header Cookie *ghost-members-ssr*
+    }
+    handle @fe_cacheable {
+        cache
         reverse_proxy {env.GHOST_BACKEND} {
             header_up Host {host}
             header_up X-Real-IP {remote_host}
             header_up X-Forwarded-For {remote_host}
-
-            # Always tell Ghost requests are HTTPS to prevent redirects
             header_up X-Forwarded-Proto https
+            # Ghost sends `Cache-Control: max-age=0` on HTML (member-aware), so Souin
+            # revalidates every request. Override to a short micro-cache window on this
+            # ANONYMOUS path so the cache actually serves. Applies to the whole cacheable
+            # path; Souin still refuses to store responses with its own no-store rules.
+            # (Prod refinement: scope to 200s via handle_response — see EDGE-CACHING.md.)
+            header_down Cache-Control "public, max-age=60, stale-while-revalidate=600"
         }
+    }
+
+    # (3) Everything else (POST, logged-in members, …) — straight through, uncached.
+    handle {
+        import ghost_proxy
     }
 
     # Handle errors

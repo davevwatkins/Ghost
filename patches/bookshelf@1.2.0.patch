@@ -1,0 +1,22 @@
+diff --git a/lib/relation.js b/lib/relation.js
+index b8e84d8a29aea87e0e8e2985087029e992a2bf0b..c71ab266390e5017fb6f66a3e5f456bbde014e44 100644
+--- a/lib/relation.js
++++ b/lib/relation.js
+@@ -258,7 +258,16 @@ const Relation = RelationBase.extend(
+       const currentColumns = _.find(knex._statements, {grouping: 'columns'});
+ 
+       if (!currentColumns || currentColumns.length === 0) {
+-        knex.distinct(this.targetTableName + '.*');
++        // TownBrief multitenancy (Postgres): Postgres rejects `SELECT DISTINCT ... FOR
++        // UPDATE`, which Ghost's forUpdate edit lock triggers on eager-loaded relations
++        // (authors, tags, post_revisions, …). The pivot join + WHERE already make the
++        // result set unique, so on pg we select columns without DISTINCT. MySQL keeps the
++        // original DISTINCT behaviour. See TOWNBRIEF-CHANGES.md.
++        if (knex.client && knex.client.config && knex.client.config.client === 'pg') {
++          knex.column(this.targetTableName + '.*');
++        } else {
++          knex.distinct(this.targetTableName + '.*');
++        }
+       }
+ 
+       if (this.isJoined()) this.joinColumns(knex);

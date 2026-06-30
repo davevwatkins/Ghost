@@ -364,6 +364,8 @@ overrides:
 packageExtensionsChecksum: sha256-VoukEtG/3ZKlZLtw2HjOKS0hPvjiZTwZtAPotZw7zcw=
 
 patchedDependencies:
+  '@tryghost/bookshelf-pagination@2.2.2': 2484bd8b124e83623ff829fafa950ac1dd3d0a11227f7701f883ea87da892de5
+  bookshelf@1.2.0: c02630950af71ff598e98314aeccbe3a7ec4360f097a1076708ac74b49a0686d
   knex-migrator@5.3.2: 79eff083cafd9b276cd4fae3e78124033cbdc3ac93719001c793fe6de85b877a
 
 importers:
@@ -2502,10 +2504,10 @@ importers:
         version: 1.20.5
       bookshelf:
         specifier: 1.2.0
-        version: 1.2.0(knex@2.4.2(pg@8.13.1)(sqlite3@5.1.7))
+        version: 1.2.0(patch_hash=c02630950af71ff598e98314aeccbe3a7ec4360f097a1076708ac74b49a0686d)(knex@2.4.2(pg@8.13.1)(sqlite3@5.1.7))
       bookshelf-relations:
         specifier: 2.8.0
-        version: 2.8.0(bookshelf@1.2.0(knex@2.4.2(pg@8.13.1)(sqlite3@5.1.7)))
+        version: 2.8.0(bookshelf@1.2.0(patch_hash=c02630950af71ff598e98314aeccbe3a7ec4360f097a1076708ac74b49a0686d)(knex@2.4.2(pg@8.13.1)(sqlite3@5.1.7)))
       brute-knex:
         specifier: 4.0.1
         version: 4.0.1(express@4.22.2)(pg@8.13.1)(sqlite3@5.1.7)
@@ -28062,7 +28064,7 @@ snapshots:
     dependencies:
       lodash: 4.18.1
 
-  '@tryghost/bookshelf-pagination@2.2.2':
+  '@tryghost/bookshelf-pagination@2.2.2(patch_hash=2484bd8b124e83623ff829fafa950ac1dd3d0a11227f7701f883ea87da892de5)':
     dependencies:
       '@tryghost/errors': 1.3.13
       '@tryghost/tpl': 2.2.1
@@ -28079,7 +28081,7 @@ snapshots:
       '@tryghost/bookshelf-has-posts': 2.3.1
       '@tryghost/bookshelf-include-count': 2.2.1
       '@tryghost/bookshelf-order': 2.2.1
-      '@tryghost/bookshelf-pagination': 2.2.2
+      '@tryghost/bookshelf-pagination': 2.2.2(patch_hash=2484bd8b124e83623ff829fafa950ac1dd3d0a11227f7701f883ea87da892de5)
       '@tryghost/bookshelf-search': 2.2.1
       '@tryghost/bookshelf-transaction-events': 2.2.1
     transitivePeerDependencies:
@@ -31246,17 +31248,17 @@ snapshots:
       raw-body: 1.1.7
       safe-json-parse: 1.0.1
 
-  bookshelf-relations@2.8.0(bookshelf@1.2.0(knex@2.4.2(pg@8.13.1)(sqlite3@5.1.7))):
+  bookshelf-relations@2.8.0(bookshelf@1.2.0(patch_hash=c02630950af71ff598e98314aeccbe3a7ec4360f097a1076708ac74b49a0686d)(knex@2.4.2(pg@8.13.1)(sqlite3@5.1.7))):
     dependencies:
       '@tryghost/debug': 0.1.40
       '@tryghost/errors': 1.3.13
       bluebird: 3.7.2
-      bookshelf: 1.2.0(knex@2.4.2(pg@8.13.1)(sqlite3@5.1.7))
+      bookshelf: 1.2.0(patch_hash=c02630950af71ff598e98314aeccbe3a7ec4360f097a1076708ac74b49a0686d)(knex@2.4.2(pg@8.13.1)(sqlite3@5.1.7))
       lodash: 4.18.1
     transitivePeerDependencies:
       - supports-color
 
-  bookshelf@1.2.0(knex@2.4.2(pg@8.13.1)(sqlite3@5.1.7)):
+  bookshelf@1.2.0(patch_hash=c02630950af71ff598e98314aeccbe3a7ec4360f097a1076708ac74b49a0686d)(knex@2.4.2(pg@8.13.1)(sqlite3@5.1.7)):
     dependencies:
       bluebird: 3.7.2
       create-error: 0.3.1

@@ -34,6 +34,10 @@
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
         Content
       </button>
+      <button class="sidebar-link w-full text-left" :class="{active: section==='members'}" @click="section='members'; membersPage=1; loadMembers()">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-2a4 4 0 100-8 4 4 0 000 8zm6 0a4 4 0 00-3-3.87"/></svg>
+        Members
+      </button>
       <button class="sidebar-link w-full text-left" :class="{active: section==='settings'}" @click="section='settings'; loadSettingsSites()">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
         Settings
@@ -132,6 +136,16 @@
                 ⚙
               </button>
             </div>
+
+            <!-- Section deep-links: SSO straight into a section of this site's admin -->
+            <div class="flex gap-1.5 mt-2">
+              <a :href="'/sso/' + site.slug + '?next=%2Fghost%2F%23%2Fposts'" target="_blank"
+                class="flex-1 text-center text-[11px] text-gray-400 hover:text-white bg-gray-800/60 hover:bg-gray-700 rounded px-2 py-1 transition-colors">Posts</a>
+              <a :href="'/sso/' + site.slug + '?next=%2Fghost%2F%23%2Fmembers'" target="_blank"
+                class="flex-1 text-center text-[11px] text-gray-400 hover:text-white bg-gray-800/60 hover:bg-gray-700 rounded px-2 py-1 transition-colors">Members</a>
+              <a :href="'/sso/' + site.slug + '?next=%2Fghost%2F%23%2Fsettings'" target="_blank"
+                class="flex-1 text-center text-[11px] text-gray-400 hover:text-white bg-gray-800/60 hover:bg-gray-700 rounded px-2 py-1 transition-colors">Settings</a>
+            </div>
           </div>
         </template>
       </div>
@@ -224,6 +238,81 @@
     </div>
 
     <!-- ── SETTINGS ────────────────────────────────────────── -->
+    <!-- Members: cross-site member browser -->
+    <div x-show="section==='members'">
+      <div class="px-8 py-6 border-b border-gray-800 sticky top-0 bg-gray-950 z-10">
+        <h1 class="text-xl font-semibold mb-4">Members</h1>
+        <div class="flex gap-3 flex-wrap">
+          <input x-model="membersQ" @input.debounce.400ms="membersPage=1; loadMembers()" type="text" placeholder="Search by email or name…"
+            class="bg-gray-800 border border-gray-700 text-white rounded-lg px-4 py-2 text-sm w-72 focus:outline-none focus:border-blue-500">
+          <select x-model="membersCounty" @change="membersSite=''; membersPage=1; loadMembers()"
+            class="bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none">
+            <option value="">All counties</option>
+            <template x-for="c in activeCounties" :key="c"><option :value="c" x-text="c"></option></template>
+          </select>
+          <select x-model="membersSite" @change="membersPage=1; loadMembers()"
+            class="bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none">
+            <option value="">All sites</option>
+            <template x-for="s in (membersCounty ? allSites.filter(s=>s.county===membersCounty) : allSites)" :key="s.slug">
+              <option :value="s.slug" x-text="s.title || s.name"></option>
+            </template>
+          </select>
+          <select x-model="membersStatus" @change="membersPage=1; loadMembers()"
+            class="bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none">
+            <option value="all">All</option>
+            <option value="paid">Paid</option>
+            <option value="free">Free</option>
+            <option value="comped">Comped</option>
+          </select>
+        </div>
+      </div>
+      <div x-show="loading" class="p-8 text-gray-500 text-sm">Loading…</div>
+      <div x-show="!loading">
+        <div class="px-8 py-3 text-xs text-gray-500 border-b border-gray-800"><span x-text="membersTotal"></span> members</div>
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-800">
+              <th class="text-left px-8 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Member</th>
+              <th class="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Site</th>
+              <th class="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">County</th>
+              <th class="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
+              <th class="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Joined</th>
+              <th class="px-4 py-3"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="m in members" :key="m.id">
+              <tr class="border-b border-gray-800/50 hover:bg-gray-900/50">
+                <td class="px-8 py-3">
+                  <div class="text-white font-medium leading-snug" x-text="m.name || m.email"></div>
+                  <div class="text-gray-500 text-xs mt-0.5" x-text="m.name ? m.email : ''"></div>
+                </td>
+                <td class="px-4 py-3 text-gray-400" x-text="m.site_name"></td>
+                <td class="px-4 py-3 text-gray-600 text-xs" x-text="m.county || ''"></td>
+                <td class="px-4 py-3">
+                  <span class="text-xs px-2 py-0.5 rounded-full font-medium"
+                    :class="m.status==='paid' ? 'bg-green-900/50 text-green-400' : (m.status==='comped' ? 'bg-purple-900/50 text-purple-300' : 'bg-gray-800 text-gray-400')"
+                    x-text="m.status"></span>
+                </td>
+                <td class="px-4 py-3 text-gray-500 text-xs" x-text="timeAgo(m.created_at)"></td>
+                <td class="px-4 py-3">
+                  <a :href="'http://' + m.site_slug + '.localtest.me/ghost/#/members/' + m.id"
+                    target="_blank" class="text-xs text-blue-400 hover:text-blue-300">Open</a>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div class="flex items-center justify-between px-8 py-4">
+          <button @click="membersPage--; loadMembers()" :disabled="membersPage<=1"
+            class="text-sm text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed">← Prev</button>
+          <span class="text-xs text-gray-500">Page <span x-text="membersPage"></span></span>
+          <button @click="membersPage++; loadMembers()" :disabled="membersPage * 40 >= membersTotal"
+            class="text-sm text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed">Next →</button>
+        </div>
+      </div>
+    </div>
+
     <div x-show="section==='settings'">
       <div class="px-8 py-6 border-b border-gray-800 flex items-center gap-4 sticky top-0 bg-gray-950 z-10">
         <div class="flex-1">
@@ -439,6 +528,14 @@ function app() {
     contentStatus: 'published',
     contentType: 'post',
     contentPage: 1,
+    // members
+    members: [],
+    membersTotal: 0,
+    membersQ: '',
+    membersSite: '',
+    membersCounty: '',
+    membersStatus: 'all',
+    membersPage: 1,
     // settings
     settingsSite: '',
     siteSettings: {},
@@ -507,6 +604,25 @@ function app() {
         const data = await fetch('/api/content?' + params).then(r => r.json());
         this.contentPosts = data.posts;
         this.contentTotal = data.total;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async loadMembers() {
+      if (!this.allSites.length) await this.loadSites();
+      this.loading = true;
+      try {
+        const params = new URLSearchParams({
+          q: this.membersQ,
+          site: this.membersSite,
+          county: this.membersCounty,
+          status: this.membersStatus,
+          page: this.membersPage
+        });
+        const data = await fetch('/api/members?' + params).then(r => r.json());
+        this.members = data.members;
+        this.membersTotal = data.total;
       } finally {
         this.loading = false;
       }

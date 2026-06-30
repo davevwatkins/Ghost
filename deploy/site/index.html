@@ -1,0 +1,2173 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TownBrief — Local government, covered. Every meeting. Every town.</title>
+<meta name="description" content="TownBrief covers every public board and committee meeting in Middlesex County, Massachusetts — AP-style articles, daily roundups, and a local government data API, powered by AI and verified by a human editor.">
+<meta property="og:title" content="TownBrief">
+<meta property="og:description" content="Local government, covered. Every meeting. Every town. Middlesex County, MA.">
+<meta property="og:url" content="https://townbrief.com">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue:      #3574c3;
+  --blue-dark: #244a90;
+  --navy:      #16263a;
+  --text:      #1a1a1a;
+  --muted:     #5a6472;
+  --faint:     #8a95a0;
+  --border:    #e2e6ea;
+  --surface:   #f7f8fa;
+  --white:     #ffffff;
+  --green:     #1a7a4a;
+  --green-bg:  #eaf6f0;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  color: var(--text);
+  background: var(--white);
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; text-decoration: none; }
+a:hover { color: var(--blue); }
+
+/* ── Layout ── */
+.container { max-width: 720px; margin: 0 auto; padding: 0 1.5rem; }
+
+/* ── Masthead ── */
+.masthead {
+  border-bottom: 1px solid var(--border);
+  padding: 2.5rem 0 2rem;
+  text-align: center;
+}
+.masthead-lantern {
+  font-size: 2rem;
+  color: var(--blue);
+  margin-bottom: 0.75rem;
+}
+.masthead-lantern svg {
+  width: 40px; height: 40px;
+  stroke: var(--blue);
+  fill: none;
+  stroke-width: 1.5;
+  vertical-align: middle;
+}
+.masthead-wordmark {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 2.5rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.5px;
+  margin-bottom: 0.6rem;
+}
+.masthead-wordmark .accent { color: var(--blue); }
+.masthead-wordmark .dark   { color: var(--blue-dark); }
+.masthead-tagline {
+  font-size: 1rem;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+.masthead-sub {
+  font-size: 0.8125rem;
+  color: var(--faint);
+}
+
+/* ── Nav ── */
+.site-nav {
+  border-bottom: 1px solid var(--border);
+  background: var(--white);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.site-nav .container {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  padding-top: 0.7rem;
+  padding-bottom: 0.7rem;
+  flex-wrap: wrap;
+}
+.site-nav a {
+  font-size: 0.875rem;
+  color: var(--muted);
+  padding-bottom: 2px;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.site-nav a:hover {
+  color: var(--text);
+  border-bottom-color: var(--blue);
+}
+
+/* ── Section ── */
+.section { padding: 3rem 0; }
+.section + .section { border-top: 1px solid var(--border); }
+
+.section-label {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 1.1rem;
+}
+.section h2 {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.625rem;
+  font-weight: 500;
+  line-height: 1.3;
+  margin-bottom: 1rem;
+  color: var(--navy);
+}
+.section p {
+  font-size: 0.9375rem;
+  color: var(--muted);
+  margin-bottom: 0.9rem;
+  line-height: 1.8;
+}
+.section p:last-child { margin-bottom: 0; }
+
+/* ── Feature cards ── */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 1.75rem;
+}
+@media (max-width: 600px) {
+  .feature-grid { grid-template-columns: 1fr; }
+}
+.feature-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1rem 1.2rem;
+}
+.feature-card .fc-icon {
+  font-size: 1.25rem;
+  margin-bottom: 0.6rem;
+  color: var(--blue);
+}
+.feature-card h3 {
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.4rem;
+  color: var(--navy);
+  line-height: 1.35;
+}
+.feature-card p {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  line-height: 1.65;
+  margin: 0;
+}
+
+/* ── Towns ── */
+.aggregator-card {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  background: var(--white);
+  border: 2px solid var(--blue);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.75rem;
+}
+.aggregator-card .ac-icon {
+  font-size: 1.375rem;
+  color: var(--blue);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.aggregator-card h3 {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--navy);
+  margin-bottom: 0.2rem;
+}
+.aggregator-card p {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.6;
+}
+.aggregator-card a { color: var(--blue); }
+
+.county-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.85rem;
+}
+.town-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin-bottom: 0.75rem;
+}
+.town-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.7rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+a.town-card:hover { border-color: var(--blue); background: var(--surface); }
+.town-card .town-name { font-size: 0.875rem; color: var(--navy); font-weight: 500; }
+.town-card .town-count { font-size: 0.75rem; color: var(--faint); margin-top: 1px; }
+.town-card.soon .town-name { color: var(--muted); font-weight: 400; }
+
+.badge {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 100px;
+}
+.badge-live { background: var(--green-bg); color: var(--green); }
+.badge-soon { background: var(--surface); color: var(--faint); }
+
+.county-note {
+  font-size: 0.8125rem;
+  color: var(--faint);
+  margin-top: 0.5rem;
+  margin-bottom: 2rem;
+}
+
+/* ── Timeline ── */
+.timeline { position: relative; padding-left: 1.5rem; margin-top: 2rem; }
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 5px; top: 6px; bottom: 6px;
+  width: 1px;
+  background: var(--border);
+}
+.tl-item { position: relative; margin-bottom: 1.5rem; }
+.tl-item:last-child { margin-bottom: 0; }
+.tl-dot {
+  position: absolute;
+  left: -1.5rem; top: 5px;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: var(--blue);
+  border: 2px solid var(--white);
+  box-shadow: 0 0 0 1px var(--blue);
+}
+.tl-date {
+  font-size: 0.75rem;
+  color: var(--faint);
+  font-weight: 500;
+  margin-bottom: 0.2rem;
+}
+.tl-text {
+  font-size: 0.875rem;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.tl-text strong { color: var(--navy); font-weight: 500; }
+
+/* ── API section ── */
+.api-hero {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.api-hero p {
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+.code-block {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.875rem 1rem;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.9;
+  overflow-x: auto;
+  white-space: pre;
+}
+.code-block .kw  { color: var(--blue); }
+.code-block .str { color: var(--green); }
+.code-block .cm  { color: var(--faint); }
+
+.api-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 1.1rem;
+}
+@media (max-width: 500px) {
+  .api-tool-grid { grid-template-columns: 1fr; }
+}
+.api-tool {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+}
+.api-tool .tool-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--blue);
+  font-weight: 500;
+  margin-bottom: 0.3rem;
+}
+.api-tool .tool-desc {
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.buyer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 1.25rem;
+}
+@media (max-width: 600px) {
+  .buyer-grid { grid-template-columns: 1fr; }
+}
+.buyer-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1rem;
+}
+.buyer-card .bc-icon {
+  font-size: 1.125rem;
+  color: var(--blue);
+  margin-bottom: 0.5rem;
+}
+.buyer-card h3 {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--navy);
+  margin-bottom: 0.3rem;
+}
+.buyer-card p {
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.65;
+  margin: 0;
+}
+
+/* ── Tier cards ── */
+.tier-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 1.25rem;
+}
+@media (max-width: 600px) {
+  .tier-grid { grid-template-columns: 1fr; }
+}
+.tier-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1rem;
+}
+.tier-card.featured { border: 2px solid var(--blue); }
+.tier-badge {
+  display: inline-block;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 100px;
+  background: #dbeafe;
+  color: var(--blue-dark);
+  margin-bottom: 0.65rem;
+}
+.tier-name {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--navy);
+  margin-bottom: 0.2rem;
+}
+.tier-price {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin-bottom: 0.85rem;
+}
+.tier-features { list-style: none; }
+.tier-features li {
+  font-size: 0.75rem;
+  padding: 3px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  line-height: 1.55;
+}
+.tier-features li.yes { color: var(--muted); }
+.tier-features li.yes::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--blue);
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+.tier-features li.no { color: var(--faint); }
+.tier-features li.no::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+.mcp-pill {
+  display: inline-block;
+  font-size: 0.625rem;
+  font-weight: 500;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #dbeafe;
+  color: var(--blue-dark);
+  font-family: 'JetBrains Mono', monospace;
+  vertical-align: middle;
+  margin-left: 3px;
+}
+
+/* ── CTAs ── */
+.cta-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+.btn {
+  display: inline-block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 9px 20px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--navy);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, border-color 0.12s;
+}
+.btn:hover { background: var(--surface); color: var(--navy); }
+.btn.primary {
+  background: var(--blue);
+  color: var(--white);
+  border-color: var(--blue);
+}
+.btn.primary:hover { background: var(--blue-dark); border-color: var(--blue-dark); color: var(--white); }
+
+/* ── Footer ── */
+.footer {
+  border-top: 1px solid var(--border);
+  padding: 2rem 0;
+  text-align: center;
+}
+.footer p {
+  font-size: 0.8125rem;
+  color: var(--faint);
+  line-height: 1.8;
+}
+.footer a { color: var(--blue); }
+.footer a:hover { color: var(--blue-dark); }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="container">
+    <div class="masthead-lantern">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 2h6l1 4H8L9 2z"/>
+        <path d="M8 6v10a4 4 0 0 0 8 0V6"/>
+        <path d="M12 6v10"/>
+        <path d="M9 18.5A2.5 2.5 0 0 0 11.5 21h1a2.5 2.5 0 0 0 2.5-2.5"/>
+        <path d="M7 6H4l1 3h14l1-3h-3"/>
+      </svg>
+    </div>
+    <div class="masthead-wordmark">
+      <span class="accent">Town</span><span class="dark">Brief</span>
+    </div>
+    <div class="masthead-tagline">Local government, covered. Every meeting. Every town.</div>
+    <div class="masthead-sub">Middlesex County, Massachusetts &nbsp;&middot;&nbsp; Readers &amp; Developers</div>
+  </div>
+</header>
+
+<nav class="site-nav" aria-label="Site navigation">
+  <div class="container">
+    <a href="#what-we-do">What we do</a>
+    <a href="#towns">Our towns</a>
+    <a href="#history">Our story</a>
+    <a href="#api">Data &amp; API</a>
+    <a href="#subscribe">Subscribe</a>
+  </div>
+</nav>
+
+<main>
+
+<!-- What we do -->
+<section class="section" id="what-we-do">
+  <div class="container">
+    <div class="section-label">What we do</div>
+    <h2>Real local journalism, powered by AI, verified by a human editor</h2>
+    <p>Town government produces more public record than any journalist can cover alone — hundreds of board and committee meetings each year, each with agendas, packets, and video. TownBrief closes that gap. We record every public meeting, transcribe it locally, and generate AP-style articles and deep reads that a human editor reviews before publication.</p>
+    <p>The result is more coverage, faster — at a fraction of traditional newsroom cost — without sacrificing accuracy or the civic accountability that local journalism exists to provide.</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="fc-icon">&#128249;</div>
+        <h3>Every meeting, on record</h3>
+        <p>We download and archive government meeting videos from public sources and cable-access stations.</p>
+      </div>
+      <div class="feature-card">
+        <div class="fc-icon">&#127908;</div>
+        <h3>Word-for-word transcripts</h3>
+        <p>Audio is transcribed locally using state-of-the-art speech recognition — no third-party data sharing.</p>
+      </div>
+      <div class="feature-card">
+        <div class="fc-icon">&#128196;</div>
+        <h3>Articles grounded in documents</h3>
+        <p>Agendas, packets, and minutes from town portals are fetched and used to verify article content.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Towns -->
+<section class="section" id="towns"><div class="container">
+  <h2>All 14 Massachusetts counties &middot; 350 towns and cities</h2>
+
+  <div class="aggregator-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:2.5rem;">
+    <a href="https://middlesexcounty.townbrief.com" class="aggregator-card" style="display:flex;flex-direction:column;gap:.25rem;padding:1rem 1.25rem;text-decoration:none;border-radius:6px;">
+      <span style="font-weight:700;color:var(--navy);">Middlesex County</span>
+      <span class="town-count">1,376 articles</span>
+    </a>
+    <a href="https://norfolkcounty.townbrief.com" class="aggregator-card" style="display:flex;flex-direction:column;gap:.25rem;padding:1rem 1.25rem;text-decoration:none;border-radius:6px;">
+      <span style="font-weight:700;color:var(--navy);">Norfolk County</span>
+      <span class="town-count">305 articles</span>
+    </a>
+    <a href="https://worcestercounty.townbrief.com" class="aggregator-card" style="display:flex;flex-direction:column;gap:.25rem;padding:1rem 1.25rem;text-decoration:none;border-radius:6px;">
+      <span style="font-weight:700;color:var(--navy);">Worcester County</span>
+      <span class="town-count">214 articles</span>
+    </a>
+    <a href="https://essexcounty.townbrief.com" class="aggregator-card" style="display:flex;flex-direction:column;gap:.25rem;padding:1rem 1.25rem;text-decoration:none;border-radius:6px;">
+      <span style="font-weight:700;color:var(--navy);">Essex County</span>
+      <span class="town-count">139 articles</span>
+    </a>
+    <a href="https://barnstablecounty.townbrief.com" class="aggregator-card" style="display:flex;flex-direction:column;gap:.25rem;padding:1rem 1.25rem;text-decoration:none;border-radius:6px;">
+      <span style="font-weight:700;color:var(--navy);">Barnstable County</span>
+      <span class="town-count">92 articles</span>
+    </a>
+    <a href="https://plymouthcounty.townbrief.com" class="aggregator-card" style="display:flex;flex-direction:column;gap:.25rem;padding:1rem 1.25rem;text-decoration:none;border-radius:6px;">
+      <span style="font-weight:700;color:var(--navy);">Plymouth County</span>
+      <span class="town-count">67 articles</span>
+    </a>
+    <a href="https://berkshirecounty.townbrief.com" class="aggregator-card" style="display:flex;flex-direction:column;gap:.25rem;padding:1rem 1.25rem;text-decoration:none;border-radius:6px;">
+      <span style="font-weight:700;color:var(--navy);">Berkshire County</span>
+      <span class="town-count">44 articles</span>
+    </a>
+    <a href="https://hampshirecounty.townbrief.com" class="aggregator-card" style="display:flex;flex-direction:column;gap:.25rem;padding:1rem 1.25rem;text-decoration:none;border-radius:6px;">
+      <span style="font-weight:700;color:var(--navy);">Hampshire County</span>
+      <span class="town-count">35 articles</span>
+    </a>
+    <a href="https://hampdencounty.townbrief.com" class="aggregator-card" style="display:flex;flex-direction:column;gap:.25rem;padding:1rem 1.25rem;text-decoration:none;border-radius:6px;">
+      <span style="font-weight:700;color:var(--navy);">Hampden County</span>
+      <span class="town-count">13 articles</span>
+    </a>
+    <a href="https://franklincounty.townbrief.com" class="aggregator-card" style="display:flex;flex-direction:column;gap:.25rem;padding:1rem 1.25rem;text-decoration:none;border-radius:6px;">
+      <span style="font-weight:700;color:var(--navy);">Franklin County</span>
+      <span class="town-count">11 articles</span>
+    </a>
+    <a href="https://bristolcounty.townbrief.com" class="aggregator-card" style="display:flex;flex-direction:column;gap:.25rem;padding:1rem 1.25rem;text-decoration:none;border-radius:6px;">
+      <span style="font-weight:700;color:var(--navy);">Bristol County</span>
+      <span style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--faint);padding:2px 8px;border-radius:3px;">launching</span>
+    </a>
+    <a href="https://dukescounty.townbrief.com" class="aggregator-card" style="display:flex;flex-direction:column;gap:.25rem;padding:1rem 1.25rem;text-decoration:none;border-radius:6px;">
+      <span style="font-weight:700;color:var(--navy);">Dukes County</span>
+      <span style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--faint);padding:2px 8px;border-radius:3px;">launching</span>
+    </a>
+    <a href="https://suffolkcounty.townbrief.com" class="aggregator-card" style="display:flex;flex-direction:column;gap:.25rem;padding:1rem 1.25rem;text-decoration:none;border-radius:6px;">
+      <span style="font-weight:700;color:var(--navy);">Suffolk County</span>
+      <span style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--faint);padding:2px 8px;border-radius:3px;">launching</span>
+    </a>
+  </div>
+
+  <div class="county-label">Barnstable County</div>
+  <div class="town-grid">
+    <a href="https://barnstable.townbrief.com" class="town-card">
+      <div class="town-name">Barnstable</div>
+      <div class="town-count">9 articles</div>
+    </a>
+    <a href="https://bourne.townbrief.com" class="town-card">
+      <div class="town-name">Bourne</div>
+      <div class="town-count">16 articles</div>
+    </a>
+    <a href="https://brewster.townbrief.com" class="town-card">
+      <div class="town-name">Brewster</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://chatham.townbrief.com" class="town-card">
+      <div class="town-name">Chatham</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://dennis.townbrief.com" class="town-card">
+      <div class="town-name">Dennis</div>
+      <div class="town-count">10 articles</div>
+    </a>
+    <a href="https://eastham.townbrief.com" class="town-card">
+      <div class="town-name">Eastham</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://falmouth.townbrief.com" class="town-card">
+      <div class="town-name">Falmouth</div>
+      <div class="town-count">15 articles</div>
+    </a>
+    <a href="https://harwich.townbrief.com" class="town-card">
+      <div class="town-name">Harwich</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://mashpee.townbrief.com" class="town-card">
+      <div class="town-name">Mashpee</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://orleans.townbrief.com" class="town-card">
+      <div class="town-name">Orleans</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://provincetown.townbrief.com" class="town-card">
+      <div class="town-name">Provincetown</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://sandwich.townbrief.com" class="town-card">
+      <div class="town-name">Sandwich</div>
+      <div class="town-count">10 articles</div>
+    </a>
+    <a href="https://truro.townbrief.com" class="town-card">
+      <div class="town-name">Truro</div>
+      <div class="town-count">10 articles</div>
+    </a>
+    <a href="https://wellfleet.townbrief.com" class="town-card">
+      <div class="town-name">Wellfleet</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://yarmouth.townbrief.com" class="town-card">
+      <div class="town-name">Yarmouth</div>
+      <div class="town-count">8 articles</div>
+    </a>
+  </div>
+
+  <div class="county-label">Berkshire County</div>
+  <div class="town-grid">
+    <a href="https://adams.townbrief.com" class="town-card">
+      <div class="town-name">Adams</div>
+      <div class="town-count">4 articles</div>
+    </a>
+    <a href="https://alford.townbrief.com" class="town-card">
+      <div class="town-name">Alford</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://becket.townbrief.com" class="town-card">
+      <div class="town-name">Becket</div>
+      <div class="town-count">8 articles</div>
+    </a>
+    <a href="https://cheshire.townbrief.com" class="town-card">
+      <div class="town-name">Cheshire</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://clarksburg.townbrief.com" class="town-card">
+      <div class="town-name">Clarksburg</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://dalton.townbrief.com" class="town-card">
+      <div class="town-name">Dalton</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://egremont.townbrief.com" class="town-card">
+      <div class="town-name">Egremont</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://florida.townbrief.com" class="town-card">
+      <div class="town-name">Florida</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://great-barrington.townbrief.com" class="town-card">
+      <div class="town-name">Great Barrington</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://hancock.townbrief.com" class="town-card">
+      <div class="town-name">Hancock</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://hinsdale.townbrief.com" class="town-card">
+      <div class="town-name">Hinsdale</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://lanesborough.townbrief.com" class="town-card">
+      <div class="town-name">Lanesborough</div>
+      <div class="town-count">14 articles</div>
+    </a>
+    <a href="https://lee.townbrief.com" class="town-card">
+      <div class="town-name">Lee</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://lenox.townbrief.com" class="town-card">
+      <div class="town-name">Lenox</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://monterey.townbrief.com" class="town-card">
+      <div class="town-name">Monterey</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://mount-washington.townbrief.com" class="town-card">
+      <div class="town-name">Mount Washington</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://new-ashford.townbrief.com" class="town-card">
+      <div class="town-name">New Ashford</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://new-marlborough.townbrief.com" class="town-card">
+      <div class="town-name">New Marlborough</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://north-adams.townbrief.com" class="town-card">
+      <div class="town-name">North Adams</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://otis.townbrief.com" class="town-card">
+      <div class="town-name">Otis</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://peru.townbrief.com" class="town-card">
+      <div class="town-name">Peru</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://pittsfield.townbrief.com" class="town-card">
+      <div class="town-name">Pittsfield</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://richmond.townbrief.com" class="town-card">
+      <div class="town-name">Richmond</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://sandisfield.townbrief.com" class="town-card">
+      <div class="town-name">Sandisfield</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://savoy.townbrief.com" class="town-card">
+      <div class="town-name">Savoy</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://sheffield.townbrief.com" class="town-card">
+      <div class="town-name">Sheffield</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://stockbridge.townbrief.com" class="town-card">
+      <div class="town-name">Stockbridge</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://tyringham.townbrief.com" class="town-card">
+      <div class="town-name">Tyringham</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://washington.townbrief.com" class="town-card">
+      <div class="town-name">Washington</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://west-stockbridge.townbrief.com" class="town-card">
+      <div class="town-name">West Stockbridge</div>
+      <div class="town-count">4 articles</div>
+    </a>
+    <a href="https://williamstown.townbrief.com" class="town-card">
+      <div class="town-name">Williamstown</div>
+      <div class="town-count">17 articles</div>
+    </a>
+    <a href="https://windsor.townbrief.com" class="town-card">
+      <div class="town-name">Windsor</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+  </div>
+
+  <div class="county-label">Bristol County</div>
+  <div class="town-grid">
+    <a href="https://acushnet.townbrief.com" class="town-card">
+      <div class="town-name">Acushnet</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://attleboro.townbrief.com" class="town-card">
+      <div class="town-name">Attleboro</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://berkley.townbrief.com" class="town-card">
+      <div class="town-name">Berkley</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://dartmouth.townbrief.com" class="town-card">
+      <div class="town-name">Dartmouth</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://dighton.townbrief.com" class="town-card">
+      <div class="town-name">Dighton</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://easton.townbrief.com" class="town-card">
+      <div class="town-name">Easton</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://fairhaven.townbrief.com" class="town-card">
+      <div class="town-name">Fairhaven</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://fall-river.townbrief.com" class="town-card">
+      <div class="town-name">Fall River</div>
+      <div class="town-count">13 articles</div>
+    </a>
+    <a href="https://freetown.townbrief.com" class="town-card">
+      <div class="town-name">Freetown</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://mansfield.townbrief.com" class="town-card">
+      <div class="town-name">Mansfield</div>
+      <div class="town-count">23 articles</div>
+    </a>
+    <a href="https://new-bedford.townbrief.com" class="town-card">
+      <div class="town-name">New Bedford</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://north-attleborough.townbrief.com" class="town-card">
+      <div class="town-name">North Attleborough</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://norton.townbrief.com" class="town-card">
+      <div class="town-name">Norton</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://raynham.townbrief.com" class="town-card">
+      <div class="town-name">Raynham</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://rehoboth.townbrief.com" class="town-card">
+      <div class="town-name">Rehoboth</div>
+      <div class="town-count">25 articles</div>
+    </a>
+    <a href="https://seekonk.townbrief.com" class="town-card">
+      <div class="town-name">Seekonk</div>
+      <div class="town-count">13 articles</div>
+    </a>
+    <a href="https://somerset.townbrief.com" class="town-card">
+      <div class="town-name">Somerset</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://swansea.townbrief.com" class="town-card">
+      <div class="town-name">Swansea</div>
+      <div class="town-count">11 articles</div>
+    </a>
+    <a href="https://taunton.townbrief.com" class="town-card">
+      <div class="town-name">Taunton</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://westport.townbrief.com" class="town-card">
+      <div class="town-name">Westport</div>
+      <div class="town-count">3 articles</div>
+    </a>
+  </div>
+
+  <div class="county-label">Dukes County</div>
+  <div class="town-grid">
+    <a href="https://aquinnah.townbrief.com" class="town-card">
+      <div class="town-name">Aquinnah</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://chilmark.townbrief.com" class="town-card">
+      <div class="town-name">Chilmark</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://edgartown.townbrief.com" class="town-card">
+      <div class="town-name">Edgartown</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://gosnold.townbrief.com" class="town-card">
+      <div class="town-name">Gosnold</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://oak-bluffs.townbrief.com" class="town-card">
+      <div class="town-name">Oak Bluffs</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://tisbury.townbrief.com" class="town-card">
+      <div class="town-name">Tisbury</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://west-tisbury.townbrief.com" class="town-card">
+      <div class="town-name">West Tisbury</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+  </div>
+
+  <div class="county-label">Essex County</div>
+  <div class="town-grid">
+    <a href="https://amesbury.townbrief.com" class="town-card">
+      <div class="town-name">Amesbury</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://andover.townbrief.com" class="town-card">
+      <div class="town-name">Andover</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://beverly.townbrief.com" class="town-card">
+      <div class="town-name">Beverly</div>
+      <div class="town-count">5 articles</div>
+    </a>
+    <a href="https://boxford.townbrief.com" class="town-card">
+      <div class="town-name">Boxford</div>
+      <div class="town-count">11 articles</div>
+    </a>
+    <a href="https://danvers.townbrief.com" class="town-card">
+      <div class="town-name">Danvers</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://essex.townbrief.com" class="town-card">
+      <div class="town-name">Essex</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://georgetown.townbrief.com" class="town-card">
+      <div class="town-name">Georgetown</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://gloucester.townbrief.com" class="town-card">
+      <div class="town-name">Gloucester</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://groveland.townbrief.com" class="town-card">
+      <div class="town-name">Groveland</div>
+      <div class="town-count">8 articles</div>
+    </a>
+    <a href="https://hamilton.townbrief.com" class="town-card">
+      <div class="town-name">Hamilton</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://haverhill.townbrief.com" class="town-card">
+      <div class="town-name">Haverhill</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://ipswich.townbrief.com" class="town-card">
+      <div class="town-name">Ipswich</div>
+      <div class="town-count">4 articles</div>
+    </a>
+    <a href="https://lawrence.townbrief.com" class="town-card">
+      <div class="town-name">Lawrence</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://lynn.townbrief.com" class="town-card">
+      <div class="town-name">Lynn</div>
+      <div class="town-count">8 articles</div>
+    </a>
+    <a href="https://lynnfield.townbrief.com" class="town-card">
+      <div class="town-name">Lynnfield</div>
+      <div class="town-count">6 articles</div>
+    </a>
+    <a href="https://manchester-by-the-sea.townbrief.com" class="town-card">
+      <div class="town-name">Manchester By The Sea</div>
+      <div class="town-count">5 articles</div>
+    </a>
+    <a href="https://marblehead.townbrief.com" class="town-card">
+      <div class="town-name">Marblehead</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://merrimac.townbrief.com" class="town-card">
+      <div class="town-name">Merrimac</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://methuen.townbrief.com" class="town-card">
+      <div class="town-name">Methuen</div>
+      <div class="town-count">10 articles</div>
+    </a>
+    <a href="https://middleton.townbrief.com" class="town-card">
+      <div class="town-name">Middleton</div>
+      <div class="town-count">4 articles</div>
+    </a>
+    <a href="https://nahant.townbrief.com" class="town-card">
+      <div class="town-name">Nahant</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://newbury.townbrief.com" class="town-card">
+      <div class="town-name">Newbury</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://newburyport.townbrief.com" class="town-card">
+      <div class="town-name">Newburyport</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://north-andover.townbrief.com" class="town-card">
+      <div class="town-name">North Andover</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://peabody.townbrief.com" class="town-card">
+      <div class="town-name">Peabody</div>
+      <div class="town-count">13 articles</div>
+    </a>
+    <a href="https://rockport.townbrief.com" class="town-card">
+      <div class="town-name">Rockport</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://rowley.townbrief.com" class="town-card">
+      <div class="town-name">Rowley</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://salem.townbrief.com" class="town-card">
+      <div class="town-name">Salem</div>
+      <div class="town-count">11 articles</div>
+    </a>
+    <a href="https://salisbury.townbrief.com" class="town-card">
+      <div class="town-name">Salisbury</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://saugus.townbrief.com" class="town-card">
+      <div class="town-name">Saugus</div>
+      <div class="town-count">9 articles</div>
+    </a>
+    <a href="https://swampscott.townbrief.com" class="town-card">
+      <div class="town-name">Swampscott</div>
+      <div class="town-count">5 articles</div>
+    </a>
+    <a href="https://topsfield.townbrief.com" class="town-card">
+      <div class="town-name">Topsfield</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://wenham.townbrief.com" class="town-card">
+      <div class="town-name">Wenham</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://west-newbury.townbrief.com" class="town-card">
+      <div class="town-name">West Newbury</div>
+      <div class="town-count">2 articles</div>
+    </a>
+  </div>
+
+  <div class="county-label">Franklin County</div>
+  <div class="town-grid">
+    <a href="https://ashfield.townbrief.com" class="town-card">
+      <div class="town-name">Ashfield</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://bernardston.townbrief.com" class="town-card">
+      <div class="town-name">Bernardston</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://buckland.townbrief.com" class="town-card">
+      <div class="town-name">Buckland</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://charlemont.townbrief.com" class="town-card">
+      <div class="town-name">Charlemont</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://colrain.townbrief.com" class="town-card">
+      <div class="town-name">Colrain</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://conway.townbrief.com" class="town-card">
+      <div class="town-name">Conway</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://deerfield.townbrief.com" class="town-card">
+      <div class="town-name">Deerfield</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://erving.townbrief.com" class="town-card">
+      <div class="town-name">Erving</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://gill.townbrief.com" class="town-card">
+      <div class="town-name">Gill</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://greenfield.townbrief.com" class="town-card">
+      <div class="town-name">Greenfield</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://hawley.townbrief.com" class="town-card">
+      <div class="town-name">Hawley</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://heath.townbrief.com" class="town-card">
+      <div class="town-name">Heath</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://leverett.townbrief.com" class="town-card">
+      <div class="town-name">Leverett</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://leyden.townbrief.com" class="town-card">
+      <div class="town-name">Leyden</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://monroe.townbrief.com" class="town-card">
+      <div class="town-name">Monroe</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://montague.townbrief.com" class="town-card">
+      <div class="town-name">Montague</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://new-salem.townbrief.com" class="town-card">
+      <div class="town-name">New Salem</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://northfield.townbrief.com" class="town-card">
+      <div class="town-name">Northfield</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://orange.townbrief.com" class="town-card">
+      <div class="town-name">Orange</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://rowe.townbrief.com" class="town-card">
+      <div class="town-name">Rowe</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://shelburne.townbrief.com" class="town-card">
+      <div class="town-name">Shelburne</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://shutesbury.townbrief.com" class="town-card">
+      <div class="town-name">Shutesbury</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://sunderland.townbrief.com" class="town-card">
+      <div class="town-name">Sunderland</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://warwick.townbrief.com" class="town-card">
+      <div class="town-name">Warwick</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://wendell.townbrief.com" class="town-card">
+      <div class="town-name">Wendell</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://whately.townbrief.com" class="town-card">
+      <div class="town-name">Whately</div>
+      <div class="town-count">1 article</div>
+    </a>
+  </div>
+
+  <div class="county-label">Hampden County</div>
+  <div class="town-grid">
+    <a href="https://agawam.townbrief.com" class="town-card">
+      <div class="town-name">Agawam</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://blandford.townbrief.com" class="town-card">
+      <div class="town-name">Blandford</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://brimfield.townbrief.com" class="town-card">
+      <div class="town-name">Brimfield</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://chester.townbrief.com" class="town-card">
+      <div class="town-name">Chester</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://chicopee.townbrief.com" class="town-card">
+      <div class="town-name">Chicopee</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://east-longmeadow.townbrief.com" class="town-card">
+      <div class="town-name">East Longmeadow</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://granville.townbrief.com" class="town-card">
+      <div class="town-name">Granville</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://hampden.townbrief.com" class="town-card">
+      <div class="town-name">Hampden</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://holland.townbrief.com" class="town-card">
+      <div class="town-name">Holland</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://holyoke.townbrief.com" class="town-card">
+      <div class="town-name">Holyoke</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://longmeadow.townbrief.com" class="town-card">
+      <div class="town-name">Longmeadow</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://ludlow.townbrief.com" class="town-card">
+      <div class="town-name">Ludlow</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://monson.townbrief.com" class="town-card">
+      <div class="town-name">Monson</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://montgomery.townbrief.com" class="town-card">
+      <div class="town-name">Montgomery</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://palmer.townbrief.com" class="town-card">
+      <div class="town-name">Palmer</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://russell.townbrief.com" class="town-card">
+      <div class="town-name">Russell</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://southwick.townbrief.com" class="town-card">
+      <div class="town-name">Southwick</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://springfield.townbrief.com" class="town-card">
+      <div class="town-name">Springfield</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://tolland.townbrief.com" class="town-card">
+      <div class="town-name">Tolland</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://wales.townbrief.com" class="town-card">
+      <div class="town-name">Wales</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://west-springfield.townbrief.com" class="town-card">
+      <div class="town-name">West Springfield</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://westfield.townbrief.com" class="town-card">
+      <div class="town-name">Westfield</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://wilbraham.townbrief.com" class="town-card">
+      <div class="town-name">Wilbraham</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+  </div>
+
+  <div class="county-label">Hampshire County</div>
+  <div class="town-grid">
+    <a href="https://amherst.townbrief.com" class="town-card">
+      <div class="town-name">Amherst</div>
+      <div class="town-count">10 articles</div>
+    </a>
+    <a href="https://belchertown.townbrief.com" class="town-card">
+      <div class="town-name">Belchertown</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://chesterfield.townbrief.com" class="town-card">
+      <div class="town-name">Chesterfield</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://cummington.townbrief.com" class="town-card">
+      <div class="town-name">Cummington</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://easthampton.townbrief.com" class="town-card">
+      <div class="town-name">Easthampton</div>
+      <div class="town-count">15 articles</div>
+    </a>
+    <a href="https://goshen.townbrief.com" class="town-card">
+      <div class="town-name">Goshen</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://granby.townbrief.com" class="town-card">
+      <div class="town-name">Granby</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://hadley.townbrief.com" class="town-card">
+      <div class="town-name">Hadley</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://hatfield.townbrief.com" class="town-card">
+      <div class="town-name">Hatfield</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://huntington.townbrief.com" class="town-card">
+      <div class="town-name">Huntington</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://middlefield.townbrief.com" class="town-card">
+      <div class="town-name">Middlefield</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://northampton.townbrief.com" class="town-card">
+      <div class="town-name">Northampton</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://pelham.townbrief.com" class="town-card">
+      <div class="town-name">Pelham</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://plainfield.townbrief.com" class="town-card">
+      <div class="town-name">Plainfield</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://south-hadley.townbrief.com" class="town-card">
+      <div class="town-name">South Hadley</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://southampton.townbrief.com" class="town-card">
+      <div class="town-name">Southampton</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://ware.townbrief.com" class="town-card">
+      <div class="town-name">Ware</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://westhampton.townbrief.com" class="town-card">
+      <div class="town-name">Westhampton</div>
+      <div class="town-count">1 article</div>
+    </a>
+  </div>
+
+  <div class="county-label">Middlesex County</div>
+  <div class="town-grid">
+    <a href="https://acton.townbrief.com" class="town-card">
+      <div class="town-name">Acton</div>
+      <div class="town-count">11 articles</div>
+    </a>
+    <a href="https://arlington.townbrief.com" class="town-card">
+      <div class="town-name">Arlington</div>
+      <div class="town-count">11 articles</div>
+    </a>
+    <a href="https://ashby.townbrief.com" class="town-card">
+      <div class="town-name">Ashby</div>
+      <div class="town-count">11 articles</div>
+    </a>
+    <a href="https://ashland.townbrief.com" class="town-card">
+      <div class="town-name">Ashland</div>
+      <div class="town-count">11 articles</div>
+    </a>
+    <a href="https://ayer.townbrief.com" class="town-card">
+      <div class="town-name">Ayer</div>
+      <div class="town-count">11 articles</div>
+    </a>
+    <a href="https://bedford.townbrief.com" class="town-card">
+      <div class="town-name">Bedford</div>
+      <div class="town-count">20 articles</div>
+    </a>
+    <a href="https://belmont.townbrief.com" class="town-card">
+      <div class="town-name">Belmont</div>
+      <div class="town-count">25 articles</div>
+    </a>
+    <a href="https://billerica.townbrief.com" class="town-card">
+      <div class="town-name">Billerica</div>
+      <div class="town-count">53 articles</div>
+    </a>
+    <a href="https://boxborough.townbrief.com" class="town-card">
+      <div class="town-name">Boxborough</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://burlington.townbrief.com" class="town-card">
+      <div class="town-name">Burlington</div>
+      <div class="town-count">17 articles</div>
+    </a>
+    <a href="https://cambridge.townbrief.com" class="town-card">
+      <div class="town-name">Cambridge</div>
+      <div class="town-count">11 articles</div>
+    </a>
+    <a href="https://carlisle.townbrief.com" class="town-card">
+      <div class="town-name">Carlisle</div>
+      <div class="town-count">25 articles</div>
+    </a>
+    <a href="https://chelmsford.townbrief.com" class="town-card">
+      <div class="town-name">Chelmsford</div>
+      <div class="town-count">5 articles</div>
+    </a>
+    <a href="https://concord.townbrief.com" class="town-card">
+      <div class="town-name">Concord</div>
+      <div class="town-count">20 articles</div>
+    </a>
+    <a href="https://dracut.townbrief.com" class="town-card">
+      <div class="town-name">Dracut</div>
+      <div class="town-count">4 articles</div>
+    </a>
+    <a href="https://dunstable.townbrief.com" class="town-card">
+      <div class="town-name">Dunstable</div>
+      <div class="town-count">7 articles</div>
+    </a>
+    <a href="https://everett.townbrief.com" class="town-card">
+      <div class="town-name">Everett</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://framingham.townbrief.com" class="town-card">
+      <div class="town-name">Framingham</div>
+      <div class="town-count">6 articles</div>
+    </a>
+    <a href="https://groton.townbrief.com" class="town-card">
+      <div class="town-name">Groton</div>
+      <div class="town-count">24 articles</div>
+    </a>
+    <a href="https://holliston.townbrief.com" class="town-card">
+      <div class="town-name">Holliston</div>
+      <div class="town-count">11 articles</div>
+    </a>
+    <a href="https://hopkinton.townbrief.com" class="town-card">
+      <div class="town-name">Hopkinton</div>
+      <div class="town-count">12 articles</div>
+    </a>
+    <a href="https://hudson.townbrief.com" class="town-card">
+      <div class="town-name">Hudson</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://lexington.townbrief.com" class="town-card">
+      <div class="town-name">Lexington</div>
+      <div class="town-count">44 articles</div>
+    </a>
+    <a href="https://lincoln.townbrief.com" class="town-card">
+      <div class="town-name">Lincoln</div>
+      <div class="town-count">56 articles</div>
+    </a>
+    <a href="https://littleton.townbrief.com" class="town-card">
+      <div class="town-name">Littleton</div>
+      <div class="town-count">27 articles</div>
+    </a>
+    <a href="https://lowell.townbrief.com" class="town-card">
+      <div class="town-name">Lowell</div>
+      <div class="town-count">4 articles</div>
+    </a>
+    <a href="https://malden.townbrief.com" class="town-card">
+      <div class="town-name">Malden</div>
+      <div class="town-count">4 articles</div>
+    </a>
+    <a href="https://marlborough.townbrief.com" class="town-card">
+      <div class="town-name">Marlborough</div>
+      <div class="town-count">52 articles</div>
+    </a>
+    <a href="https://maynard.townbrief.com" class="town-card">
+      <div class="town-name">Maynard</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://medford.townbrief.com" class="town-card">
+      <div class="town-name">Medford</div>
+      <div class="town-count">5 articles</div>
+    </a>
+    <a href="https://melrose.townbrief.com" class="town-card">
+      <div class="town-name">Melrose</div>
+      <div class="town-count">5 articles</div>
+    </a>
+    <a href="https://natick.townbrief.com" class="town-card">
+      <div class="town-name">Natick</div>
+      <div class="town-count">48 articles</div>
+    </a>
+    <a href="https://newton.townbrief.com" class="town-card">
+      <div class="town-name">Newton</div>
+      <div class="town-count">4 articles</div>
+    </a>
+    <a href="https://north-reading.townbrief.com" class="town-card">
+      <div class="town-name">North Reading</div>
+      <div class="town-count">21 articles</div>
+    </a>
+    <a href="https://pepperell.townbrief.com" class="town-card">
+      <div class="town-name">Pepperell</div>
+      <div class="town-count">13 articles</div>
+    </a>
+    <a href="https://reading.townbrief.com" class="town-card">
+      <div class="town-name">Reading</div>
+      <div class="town-count">10 articles</div>
+    </a>
+    <a href="https://sherborn.townbrief.com" class="town-card">
+      <div class="town-name">Sherborn</div>
+      <div class="town-count">9 articles</div>
+    </a>
+    <a href="https://shirley.townbrief.com" class="town-card">
+      <div class="town-name">Shirley</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://somerville.townbrief.com" class="town-card">
+      <div class="town-name">Somerville</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://stoneham.townbrief.com" class="town-card">
+      <div class="town-name">Stoneham</div>
+      <div class="town-count">22 articles</div>
+    </a>
+    <a href="https://stow.townbrief.com" class="town-card">
+      <div class="town-name">Stow</div>
+      <div class="town-count">19 articles</div>
+    </a>
+    <a href="https://sudbury.townbrief.com" class="town-card">
+      <div class="town-name">Sudbury</div>
+      <div class="town-count">147 articles</div>
+    </a>
+    <a href="https://tewksbury.townbrief.com" class="town-card">
+      <div class="town-name">Tewksbury</div>
+      <div class="town-count">41 articles</div>
+    </a>
+    <a href="https://townsend.townbrief.com" class="town-card">
+      <div class="town-name">Townsend</div>
+      <div class="town-count">33 articles</div>
+    </a>
+    <a href="https://tyngsborough.townbrief.com" class="town-card">
+      <div class="town-name">Tyngsborough</div>
+      <div class="town-count">13 articles</div>
+    </a>
+    <a href="https://wakefield.townbrief.com" class="town-card">
+      <div class="town-name">Wakefield</div>
+      <div class="town-count">10 articles</div>
+    </a>
+    <a href="https://waltham.townbrief.com" class="town-card">
+      <div class="town-name">Waltham</div>
+      <div class="town-count">16 articles</div>
+    </a>
+    <a href="https://watertown.townbrief.com" class="town-card">
+      <div class="town-name">Watertown</div>
+      <div class="town-count">11 articles</div>
+    </a>
+    <a href="https://wayland.townbrief.com" class="town-card">
+      <div class="town-name">Wayland</div>
+      <div class="town-count">5,380+ articles</div>
+    </a>
+    <a href="https://westford.townbrief.com" class="town-card">
+      <div class="town-name">Westford</div>
+      <div class="town-count">19 articles</div>
+    </a>
+    <a href="https://weston.townbrief.com" class="town-card">
+      <div class="town-name">Weston</div>
+      <div class="town-count">134 articles</div>
+    </a>
+    <a href="https://wilmington.townbrief.com" class="town-card">
+      <div class="town-name">Wilmington</div>
+      <div class="town-count">21 articles</div>
+    </a>
+    <a href="https://winchester.townbrief.com" class="town-card">
+      <div class="town-name">Winchester</div>
+      <div class="town-count">9 articles</div>
+    </a>
+    <a href="https://woburn.townbrief.com" class="town-card">
+      <div class="town-name">Woburn</div>
+      <div class="town-count">9 articles</div>
+    </a>
+  </div>
+
+  <div class="county-label">Norfolk County</div>
+  <div class="town-grid">
+    <a href="https://avon.townbrief.com" class="town-card">
+      <div class="town-name">Avon</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://bellingham.townbrief.com" class="town-card">
+      <div class="town-name">Bellingham</div>
+      <div class="town-count">26 articles</div>
+    </a>
+    <a href="https://braintree.townbrief.com" class="town-card">
+      <div class="town-name">Braintree</div>
+      <div class="town-count">7 articles</div>
+    </a>
+    <a href="https://brookline.townbrief.com" class="town-card">
+      <div class="town-name">Brookline</div>
+      <div class="town-count">15 articles</div>
+    </a>
+    <a href="https://canton.townbrief.com" class="town-card">
+      <div class="town-name">Canton</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://cohasset.townbrief.com" class="town-card">
+      <div class="town-name">Cohasset</div>
+      <div class="town-count">7 articles</div>
+    </a>
+    <a href="https://dedham.townbrief.com" class="town-card">
+      <div class="town-name">Dedham</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://dover.townbrief.com" class="town-card">
+      <div class="town-name">Dover</div>
+      <div class="town-count">37 articles</div>
+    </a>
+    <a href="https://foxborough.townbrief.com" class="town-card">
+      <div class="town-name">Foxborough</div>
+      <div class="town-count">12 articles</div>
+    </a>
+    <a href="https://franklin.townbrief.com" class="town-card">
+      <div class="town-name">Franklin</div>
+      <div class="town-count">12 articles</div>
+    </a>
+    <a href="https://holbrook.townbrief.com" class="town-card">
+      <div class="town-name">Holbrook</div>
+      <div class="town-count">11 articles</div>
+    </a>
+    <a href="https://medfield.townbrief.com" class="town-card">
+      <div class="town-name">Medfield</div>
+      <div class="town-count">7 articles</div>
+    </a>
+    <a href="https://medway.townbrief.com" class="town-card">
+      <div class="town-name">Medway</div>
+      <div class="town-count">7 articles</div>
+    </a>
+    <a href="https://millis.townbrief.com" class="town-card">
+      <div class="town-name">Millis</div>
+      <div class="town-count">5 articles</div>
+    </a>
+    <a href="https://milton.townbrief.com" class="town-card">
+      <div class="town-name">Milton</div>
+      <div class="town-count">8 articles</div>
+    </a>
+    <a href="https://needham.townbrief.com" class="town-card">
+      <div class="town-name">Needham</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://norfolk.townbrief.com" class="town-card">
+      <div class="town-name">Norfolk</div>
+      <div class="town-count">6 articles</div>
+    </a>
+    <a href="https://norwood.townbrief.com" class="town-card">
+      <div class="town-name">Norwood</div>
+      <div class="town-count">6 articles</div>
+    </a>
+    <a href="https://plainville.townbrief.com" class="town-card">
+      <div class="town-name">Plainville</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://quincy.townbrief.com" class="town-card">
+      <div class="town-name">Quincy</div>
+      <div class="town-count">6 articles</div>
+    </a>
+    <a href="https://sharon.townbrief.com" class="town-card">
+      <div class="town-name">Sharon</div>
+      <div class="town-count">8 articles</div>
+    </a>
+    <a href="https://stoughton.townbrief.com" class="town-card">
+      <div class="town-name">Stoughton</div>
+      <div class="town-count">4 articles</div>
+    </a>
+    <a href="https://walpole.townbrief.com" class="town-card">
+      <div class="town-name">Walpole</div>
+      <div class="town-count">8 articles</div>
+    </a>
+    <a href="https://wellesley.townbrief.com" class="town-card">
+      <div class="town-name">Wellesley</div>
+      <div class="town-count">73 articles</div>
+    </a>
+    <a href="https://westwood.townbrief.com" class="town-card">
+      <div class="town-name">Westwood</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://weymouth.townbrief.com" class="town-card">
+      <div class="town-name">Weymouth</div>
+      <div class="town-count">21 articles</div>
+    </a>
+    <a href="https://wrentham.townbrief.com" class="town-card">
+      <div class="town-name">Wrentham</div>
+      <div class="town-count">3 articles</div>
+    </a>
+  </div>
+
+  <div class="county-label">Plymouth County</div>
+  <div class="town-grid">
+    <a href="https://abington.townbrief.com" class="town-card">
+      <div class="town-name">Abington</div>
+      <div class="town-count">4 articles</div>
+    </a>
+    <a href="https://bridgewater.townbrief.com" class="town-card">
+      <div class="town-name">Bridgewater</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://brockton.townbrief.com" class="town-card">
+      <div class="town-name">Brockton</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://carver.townbrief.com" class="town-card">
+      <div class="town-name">Carver</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://duxbury.townbrief.com" class="town-card">
+      <div class="town-name">Duxbury</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://east-bridgewater.townbrief.com" class="town-card">
+      <div class="town-name">East Bridgewater</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://halifax.townbrief.com" class="town-card">
+      <div class="town-name">Halifax</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://hanover.townbrief.com" class="town-card">
+      <div class="town-name">Hanover</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://hanson.townbrief.com" class="town-card">
+      <div class="town-name">Hanson</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://hingham.townbrief.com" class="town-card">
+      <div class="town-name">Hingham</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://hull.townbrief.com" class="town-card">
+      <div class="town-name">Hull</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://kingston.townbrief.com" class="town-card">
+      <div class="town-name">Kingston</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://marshfield.townbrief.com" class="town-card">
+      <div class="town-name">Marshfield</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://middleborough.townbrief.com" class="town-card">
+      <div class="town-name">Middleborough</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://norwell.townbrief.com" class="town-card">
+      <div class="town-name">Norwell</div>
+      <div class="town-count">9 articles</div>
+    </a>
+    <a href="https://pembroke.townbrief.com" class="town-card">
+      <div class="town-name">Pembroke</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://plymouth.townbrief.com" class="town-card">
+      <div class="town-name">Plymouth</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://plympton.townbrief.com" class="town-card">
+      <div class="town-name">Plympton</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://rochester.townbrief.com" class="town-card">
+      <div class="town-name">Rochester</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://rockland.townbrief.com" class="town-card">
+      <div class="town-name">Rockland</div>
+      <div class="town-count">4 articles</div>
+    </a>
+    <a href="https://scituate.townbrief.com" class="town-card">
+      <div class="town-name">Scituate</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://wareham.townbrief.com" class="town-card">
+      <div class="town-name">Wareham</div>
+      <div class="town-count">9 articles</div>
+    </a>
+    <a href="https://west-bridgewater.townbrief.com" class="town-card">
+      <div class="town-name">West Bridgewater</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://whitman.townbrief.com" class="town-card">
+      <div class="town-name">Whitman</div>
+      <div class="town-count">3 articles</div>
+    </a>
+  </div>
+
+  <div class="county-label">Suffolk County</div>
+  <div class="town-grid">
+    <a href="https://boston.townbrief.com" class="town-card">
+      <div class="town-name">Boston</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://chelsea.townbrief.com" class="town-card">
+      <div class="town-name">Chelsea</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://revere.townbrief.com" class="town-card">
+      <div class="town-name">Revere</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://winthrop.townbrief.com" class="town-card">
+      <div class="town-name">Winthrop</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+  </div>
+
+  <div class="county-label">Worcester County</div>
+  <div class="town-grid">
+    <a href="https://ashburnham.townbrief.com" class="town-card">
+      <div class="town-name">Ashburnham</div>
+      <div class="town-count">21 articles</div>
+    </a>
+    <a href="https://athol.townbrief.com" class="town-card">
+      <div class="town-name">Athol</div>
+      <div class="town-count">15 articles</div>
+    </a>
+    <a href="https://auburn.townbrief.com" class="town-card">
+      <div class="town-name">Auburn</div>
+      <div class="town-count">4 articles</div>
+    </a>
+    <a href="https://barre.townbrief.com" class="town-card">
+      <div class="town-name">Barre</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://berlin.townbrief.com" class="town-card">
+      <div class="town-name">Berlin</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://bolton.townbrief.com" class="town-card">
+      <div class="town-name">Bolton</div>
+      <div class="town-count">4 articles</div>
+    </a>
+    <a href="https://brookfield.townbrief.com" class="town-card">
+      <div class="town-name">Brookfield</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://charlton.townbrief.com" class="town-card">
+      <div class="town-name">Charlton</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://clinton.townbrief.com" class="town-card">
+      <div class="town-name">Clinton</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://douglas.townbrief.com" class="town-card">
+      <div class="town-name">Douglas</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://dudley.townbrief.com" class="town-card">
+      <div class="town-name">Dudley</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://east-brookfield.townbrief.com" class="town-card">
+      <div class="town-name">East Brookfield</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://fitchburg.townbrief.com" class="town-card">
+      <div class="town-name">Fitchburg</div>
+      <div class="town-count">14 articles</div>
+    </a>
+    <a href="https://grafton.townbrief.com" class="town-card">
+      <div class="town-name">Grafton</div>
+      <div class="town-count">10 articles</div>
+    </a>
+    <a href="https://hardwick.townbrief.com" class="town-card">
+      <div class="town-name">Hardwick</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://hopedale.townbrief.com" class="town-card">
+      <div class="town-name">Hopedale</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://hubbardston.townbrief.com" class="town-card">
+      <div class="town-name">Hubbardston</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://leominster.townbrief.com" class="town-card">
+      <div class="town-name">Leominster</div>
+      <div class="town-count">15 articles</div>
+    </a>
+    <a href="https://lunenburg.townbrief.com" class="town-card">
+      <div class="town-name">Lunenburg</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://mendon.townbrief.com" class="town-card">
+      <div class="town-name">Mendon</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://milford.townbrief.com" class="town-card">
+      <div class="town-name">Milford</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://millbury.townbrief.com" class="town-card">
+      <div class="town-name">Millbury</div>
+      <div class="town-count">7 articles</div>
+    </a>
+    <a href="https://millville.townbrief.com" class="town-card">
+      <div class="town-name">Millville</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://north-brookfield.townbrief.com" class="town-card">
+      <div class="town-name">North Brookfield</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://northborough.townbrief.com" class="town-card">
+      <div class="town-name">Northborough</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://oakham.townbrief.com" class="town-card">
+      <div class="town-name">Oakham</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://paxton.townbrief.com" class="town-card">
+      <div class="town-name">Paxton</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://phillipston.townbrief.com" class="town-card">
+      <div class="town-name">Phillipston</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://rutland.townbrief.com" class="town-card">
+      <div class="town-name">Rutland</div>
+      <div class="town-count">8 articles</div>
+    </a>
+    <a href="https://shrewsbury.townbrief.com" class="town-card">
+      <div class="town-name">Shrewsbury</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://southborough.townbrief.com" class="town-card">
+      <div class="town-name">Southborough</div>
+      <div class="town-count">19 articles</div>
+    </a>
+    <a href="https://southbridge.townbrief.com" class="town-card">
+      <div class="town-name">Southbridge</div>
+      <div class="town-count" style="color:var(--muted)">new</div>
+    </a>
+    <a href="https://spencer.townbrief.com" class="town-card">
+      <div class="town-name">Spencer</div>
+      <div class="town-count">8 articles</div>
+    </a>
+    <a href="https://sturbridge.townbrief.com" class="town-card">
+      <div class="town-name">Sturbridge</div>
+      <div class="town-count">1 article</div>
+    </a>
+    <a href="https://templeton.townbrief.com" class="town-card">
+      <div class="town-name">Templeton</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://upton.townbrief.com" class="town-card">
+      <div class="town-name">Upton</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://warren.townbrief.com" class="town-card">
+      <div class="town-name">Warren</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://webster.townbrief.com" class="town-card">
+      <div class="town-name">Webster</div>
+      <div class="town-count">3 articles</div>
+    </a>
+    <a href="https://west-boylston.townbrief.com" class="town-card">
+      <div class="town-name">West Boylston</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://west-brookfield.townbrief.com" class="town-card">
+      <div class="town-name">West Brookfield</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://westborough.townbrief.com" class="town-card">
+      <div class="town-name">Westborough</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://westminster.townbrief.com" class="town-card">
+      <div class="town-name">Westminster</div>
+      <div class="town-count">2 articles</div>
+    </a>
+    <a href="https://winchendon.townbrief.com" class="town-card">
+      <div class="town-name">Winchendon</div>
+      <div class="town-count">20 articles</div>
+    </a>
+    <a href="https://worcester.townbrief.com" class="town-card">
+      <div class="town-name">Worcester</div>
+      <div class="town-count">1 article</div>
+    </a>
+  </div>
+
+</section>
+
+---
+
+That's the complete block. A few notes on what was done and any edge cases:
+
+- **MySQL query**: ran per-DB to avoid the `UNION ALL` size limit and handle DBs with missing `posts` table (e.g., `hawley`, `southampton`, `taunton` â€” those Ghost instances exist but the `posts` table is absent, so their counts are shown as 0/"new").
+- **County aggregators**: sorted by article count descending; Bristol, Dukes, and Suffolk show "launching" badges per the 0-count rule.
+- **Wayland**: hardcoded to `wayland.townbrief.com` with "5,380+ articles" as specified.
+- **Suffolk towns**: Boston, Chelsea, Revere, Winthrop have no Ghost DBs on the server yet so all show "new".
+- **Hyphened slugs**: display names title-cased correctly (e.g., `east-bridgewater` â†’ "East Bridgewater", `manchester-by-the-sea` â†’ "Manchester By The Sea").
+- **Singular/plural**: "1 article" vs "N articles" correctly handled throughout.
+
+<!-- History -->
+<section class="section" id="history">
+  <div class="container">
+    <div class="section-label">Our story</div>
+    <h2>How TownBrief began</h2>
+    <p>Like most towns, Wayland, Massachusetts had dedicated boards and committees that met regularly, kept meticulous records, and made decisions that shaped daily life — and almost none of it made the news. The MetroWest Daily News had cut its local staff. The legacy weeklies were gone. Town meeting votes, school budget debates, conservation hearings — they happened, were recorded, and vanished.</p>
+    <p>TownBrief started from a simple observation: the public record already exists. Meeting videos are online. Agendas are posted. Minutes are published. What was missing was a journalist with the time to turn all of it into readable coverage.</p>
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-dot"></div>
+        <div class="tl-date">Early 2025</div>
+        <div class="tl-text"><strong>The pipeline begins.</strong> A local journalist builds an automated system to download WayCAM meeting videos for Wayland, transcribe them locally, and draft AP-style articles — with a human editor reviewing every piece before publication.</div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot"></div>
+        <div class="tl-date">Late 2025</div>
+        <div class="tl-text"><strong>The Wayland Post launches.</strong> Wayland's first dedicated digital outlet publishes government coverage, daily roundups, sports, and obituaries — covering more committees than any prior outlet, every week.</div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot"></div>
+        <div class="tl-date">June 2026</div>
+        <div class="tl-text"><strong>Sudbury joins the network.</strong> The pipeline extends to a second town and the TownBrief fleet model is established — one publication per town, shared infrastructure, each with its own editorial identity.</div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot"></div>
+        <div class="tl-date">June 2026</div>
+        <div class="tl-text"><strong>Middlesex County News goes live.</strong> A county-wide aggregator pulls the most important stories across the network into a single daily read for readers who follow multiple towns.</div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot"></div>
+        <div class="tl-date">2026 &ndash; ongoing</div>
+        <div class="tl-text"><strong>The data layer opens.</strong> TownBrief's local government corpus — transcripts, articles, agendas — becomes available to developers and AI tools via API and MCP, turning every meeting into a queryable record.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- API -->
+<section class="section" id="api">
+  <div class="container">
+    <div class="section-label">Data &amp; API</div>
+    <h2>Local government intelligence for AI and developers</h2>
+    <p>TownBrief's pipeline produces a structured, timestamped corpus of local government activity — every transcript, article, agenda, and vote — accessible via REST API and as a Model Context Protocol (MCP) server. Wire it into your AI assistant, civic app, or research tool.</p>
+
+    <div class="api-hero">
+      <p>Ask any AI assistant connected to TownBrief's MCP:</p>
+      <div class="code-block"><span class="cm"># Example tool calls</span>
+<span class="kw">search_meetings</span>(<span class="str">"Wayland"</span>, committee=<span class="str">"Planning Board"</span>, query=<span class="str">"40B housing"</span>)
+<span class="kw">get_article</span>(meeting_id=<span class="str">"wayland-select-board-2026-06-10"</span>)
+<span class="kw">get_committee_summary</span>(<span class="str">"Sudbury"</span>, committee=<span class="str">"Finance Committee"</span>, since=<span class="str">"2026-01-01"</span>)
+<span class="kw">list_recent_meetings</span>(<span class="str">"Wayland"</span>, limit=<span class="str">10</span>)</div>
+      <div class="api-tool-grid">
+        <div class="api-tool">
+          <div class="tool-name">search_meetings()</div>
+          <div class="tool-desc">Full-text search across all transcripts and articles by town, committee, date range, or keyword.</div>
+        </div>
+        <div class="api-tool">
+          <div class="tool-name">get_transcript()</div>
+          <div class="tool-desc">Full transcript text and timestamped SRT for any meeting in the archive.</div>
+        </div>
+        <div class="api-tool">
+          <div class="tool-name">get_article()</div>
+          <div class="tool-desc">AP-style article, brief summary, and headline candidates for any meeting.</div>
+        </div>
+        <div class="api-tool">
+          <div class="tool-name">get_committee_summary()</div>
+          <div class="tool-desc">Rolled-up activity digest for a committee over a date range — votes, topics, attendees.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-label">Who uses it</div>
+    <div class="buyer-grid">
+      <div class="buyer-card">
+        <div class="bc-icon">&#127968;</div>
+        <h3>Real estate &amp; title</h3>
+        <p>AI assistants that answer "what's pending in the Planning Board that affects this parcel?" need hyperlocal zoning data — TownBrief has it.</p>
+      </div>
+      <div class="buyer-card">
+        <div class="bc-icon">&#128187;</div>
+        <h3>Civic tech developers</h3>
+        <p>Apps for voter prep, Town Meeting guides, and property research. The data exists — the API saves them building the pipeline.</p>
+      </div>
+      <div class="buyer-card">
+        <div class="bc-icon">&#128240;</div>
+        <h3>Regional news orgs</h3>
+        <p>Papers covering neighboring towns can license transcripts and summaries rather than standing up their own ingestion infrastructure.</p>
+      </div>
+    </div>
+
+    <div class="section-label" style="margin-top: 1.75rem;">API tiers</div>
+    <div class="tier-grid">
+      <div class="tier-card">
+        <div class="tier-name">Free</div>
+        <div class="tier-price">No cost &middot; API key required</div>
+        <ul class="tier-features">
+          <li class="yes">Last 10 days of data</li>
+          <li class="yes">1 town</li>
+          <li class="yes">Articles &amp; briefs only</li>
+          <li class="yes">100 calls / day</li>
+          <li class="no">No MCP server access</li>
+          <li class="no">No transcripts or SRT</li>
+        </ul>
+      </div>
+      <div class="tier-card featured">
+        <div class="tier-badge">Most popular</div>
+        <div class="tier-name">Pro</div>
+        <div class="tier-price">Metered &middot; per 1,000 calls</div>
+        <ul class="tier-features">
+          <li class="yes">MCP server access <span class="mcp-pill">MCP</span></li>
+          <li class="yes">Full archive (2025&ndash;present)</li>
+          <li class="yes">All Middlesex towns</li>
+          <li class="yes">Transcripts + SRT files</li>
+          <li class="yes">Pay only for what you use</li>
+        </ul>
+      </div>
+      <div class="tier-card">
+        <div class="tier-name">Enterprise</div>
+        <div class="tier-price">Contact us</div>
+        <ul class="tier-features">
+          <li class="yes">MCP server access <span class="mcp-pill">MCP</span></li>
+          <li class="yes">Multi-county licensing</li>
+          <li class="yes">White-label data feeds</li>
+          <li class="yes">Custom town onboarding</li>
+          <li class="yes">SLA &amp; priority support</li>
+          <li class="yes">Unlimited calls</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="cta-row">
+      <a class="btn primary" href="mailto:dave@townbrief.com">Request API access &rarr;</a>
+      <a class="btn" href="mailto:dave@townbrief.com">MCP documentation</a>
+    </div>
+  </div>
+</section>
+
+<!-- Subscribe -->
+<section class="section" id="subscribe">
+  <div class="container">
+    <div class="section-label">Subscribe</div>
+    <h2>Stay informed. Support local journalism.</h2>
+    <p>Free subscribers get daily news roundups, sports, and obituaries. Paid subscribers unlock full committee-by-committee coverage — the Select Board debates, Planning Board hearings, Finance Committee deliberations, and school board decisions that shape your town.</p>
+    <p>Subscriptions fund this journalism directly. There are no advertisers setting the agenda.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="https://wayland.townbrief.com/#/portal/signup">Wayland &rarr;</a>
+      <a class="btn primary" href="https://sudbury.townbrief.com/#/portal/signup">Sudbury &rarr;</a>
+      <a class="btn" href="https://middlesexcounty.townbrief.com/#/portal/signup">Middlesex County News &rarr;</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="container">
+    <p>
+      TownBrief &nbsp;&middot;&nbsp; Middlesex &amp; Norfolk Counties, Massachusetts<br>
+      <a href="https://wayland.townbrief.com">Wayland</a> &middot;
+      <a href="https://sudbury.townbrief.com">Sudbury</a> &middot;
+      <a href="https://weston.townbrief.com">Weston</a> &middot;
+      <a href="https://lincoln.townbrief.com">Lincoln</a> &middot;
+      <a href="https://wellesley.townbrief.com">Wellesley</a> &middot;
+      <a href="https://norfolk.townbrief.com">Norfolk</a><br>
+      <a href="https://middlesexcounty.townbrief.com">Middlesex County News</a> &middot;
+      <a href="https://norfolkcounty.townbrief.com">Norfolk County News</a>
+      &nbsp;&middot;&nbsp;
+      <a href="mailto:dave@townbrief.com">dave@townbrief.com</a>
+    </p>
+    <p style="margin-top: 0.5rem;">&copy; 2026 TownBrief. All coverage reviewed by a human editor.</p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -208,4 +208,6 @@ minimumReleaseAgeExclude:
   - "gscan"
   - "knex-migrator"
 patchedDependencies:
+  '@tryghost/bookshelf-pagination@2.2.2': patches/@tryghost__bookshelf-pagination@2.2.2.patch
+  bookshelf@1.2.0: patches/bookshelf@1.2.0.patch
   knex-migrator@5.3.2: patches/knex-migrator@5.3.2.patch

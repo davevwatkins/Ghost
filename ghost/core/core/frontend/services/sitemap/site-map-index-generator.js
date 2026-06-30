@@ -30,8 +30,19 @@ class SiteMapIndexGenerator {
     }
 
     generateSiteMapUrlElements() {
+        // TownBrief multitenancy: count only the active site's nodes so the index
+        // doesn't advertise sub-sitemaps that are empty for this tenant, and so
+        // pagination reflects the site rather than the global singleton's node count.
+        const baseUrl = localUtils.getActiveSiteBaseUrl();
         return _.map(this.types, (resourceType) => {
-            const noOfPages = Math.ceil(Object.keys(resourceType.nodeLookup).length / this.maxPerPage);
+            let nodeCount = Object.keys(resourceType.nodeLookup).length;
+            if (baseUrl) {
+                nodeCount = _.filter(resourceType.nodeLookup, (node) => {
+                    const loc = node && node.url && node.url[0] && node.url[0].loc;
+                    return localUtils.locBelongsToSite(loc, baseUrl);
+                }).length;
+            }
+            const noOfPages = Math.ceil(nodeCount / this.maxPerPage);
             const pages = [];
             for (let i = 0; i < noOfPages; i++) {
                 const page = i === 0 ? '' : `-${i + 1}`;
