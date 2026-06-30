@@ -1,48 +1,40 @@
-# Staging override — run the MULTITENANT stack next to the live per-town fleet on the
-# SAME OVH box, WITHOUT touching the live :80/:443 or any live data.
+# Staging override — bring the MULTITENANT stack up next to the live per-town fleet on
+# the SAME box, WITHOUT touching the live :80/:443 or any live data.
 #
-# Why this is safe:
-#   * Use it with `-p townbrief-mt` → its own containers, volumes, and network, fully
-#     isolated from BOTH the live `townbrief` fleet and the default `townbrief-prod`.
-#   * Ghost is published ONLY on 127.0.0.1:2369 (loopback) — not publicly reachable and
-#     no collision with the live Caddy on :80/:443.
-#   * Caddy is NOT started in staging (the `up` command lists services explicitly and
-#     omits caddy), so wildcard ACME — which needs DNS on Cloudflare, not yet done —
-#     never runs and nothing competes for :80/:443.
+# It uses the base compose's own project name (`townbrief-prod`) and network
+# (`townbrief_prod`) — both DISTINCT from the live `townbrief` fleet, so volumes,
+# containers, and network never collide. Because Compose names everything by PROJECT
+# (not directory) and the compose uses relative paths, you can later
+#   `mv /root/townbrief-mt /root/townbrief`
+# (after deleting the old fleet) and keep running the SAME stack from the new path.
 #
-# Prereqs: CI image built (push of `townbrief` triggers it), and `cp .env.example .env`
-# with Postgres + ghost_app passwords + GHOST_PUBLIC_URL + SMTP filled in.
-# ACME_EMAIL / CLOUDFLARE_API_TOKEN can stay blank for staging (Caddy isn't started).
+# What this override does: publishes Ghost on 127.0.0.1:2369 (loopback only) so you can
+# smoke-test the multitenant app by Host header without TLS/Caddy. Caddy + superadmin are
+# simply not listed in the `up` command below during staging (Caddy/wildcard ACME wait on
+# DNS moving to Cloudflare; superadmin is added at cutover for SSO).
 #
-# Stand up (from /root/townbrief-mt/deploy):
-#   docker compose -p townbrief-mt -f compose.production.yaml -f compose.staging.yaml \
-#       up -d postgres redis ghost
+# Stand up (from /root/townbrief-mt/deploy, after `cp .env.example .env` + setting the
+# two passwords):
+#   docker compose -f compose.production.yaml -f compose.staging.yaml up -d postgres redis ghost
 #
-# Verify RLS role is non-super:
-#   docker compose -p townbrief-mt -f compose.production.yaml exec postgres \
+# Verify the runtime role is NON-super (RLS is load-bearing):
+#   docker compose -f compose.production.yaml exec postgres \
 #     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
 #     -c "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname='ghost_app';"
 #
 # Smoke-test the multitenant app by Host header (no TLS needed):
 #   curl -s -H 'Host: middlesexcounty.townbrief.com' http://127.0.0.1:2369/ -o /dev/null -w 'HTTP %{http_code}\n'
 #
-# Provision a test tenant, then re-curl its host:
-#   docker compose -p townbrief-mt -f compose.production.yaml exec ghost \
+# Provision a test tenant, then re-curl it:
+#   docker compose -f compose.production.yaml exec ghost \
 #     node scripts/townbrief-add-site.js --slug=wayland --name="Wayland" \
 #       --host=wayland.townbrief.com --owner-email=editor@townbrief.com
 #
-# Tear down (live fleet untouched);  add -v to also drop staging volumes for a clean re-test:
-#   docker compose -p townbrief-mt -f compose.production.yaml -f compose.staging.yaml down
+# Tear down (live fleet untouched); add -v to also drop staging volumes for a clean re-test:
+#   docker compose -f compose.production.yaml -f compose.staging.yaml down
 
 services:
   ghost:
-    # Base compose publishes no ghost ports, so this loopback publish is a safe append
-    # (no list-merge surprises). Lets you curl the multitenant Ghost directly by Host header.
+    # Base compose publishes no ghost ports, so this loopback publish is a safe append.
     ports:
       - "127.0.0.1:2369:2368"
-
-networks:
-  # Base compose hardcodes the network name `townbrief_prod`; rename it so the staging
-  # stack gets its own isolated network and can never collide with a real prod project.
-  default:
-    name: townbrief_mt
