@@ -111,6 +111,16 @@ if (fs.existsSync(patchesSrc)) {
     console.log('Copied patches/ into deploy dir (for patchedDependencies install)');
 }
 
+// Carry the TownBrief ops scripts (the tenant provisioner etc.) into the image so
+// `node scripts/townbrief-add-site.js` works in production. They live at the repo
+// root — outside ghost/core's `files` — so pnpm deploy never includes them.
+const opsScriptsSrc = path.join(ROOT_DIR, 'scripts');
+const opsScriptsDst = path.join(DEPLOY_DIR, 'scripts');
+if (fs.existsSync(opsScriptsSrc)) {
+    fsExtra.copySync(opsScriptsSrc, opsScriptsDst);
+    console.log('Copied scripts/ into deploy dir (TownBrief ops/provisioning scripts)');
+}
+
 // Pack private workspace packages as component tarballs.
 // These are not on npm, so ghost-cli can't install them from the registry.
 // pnpm deploy writes absolute file:// refs that won't work on another machine.

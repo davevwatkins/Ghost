@@ -17,10 +17,28 @@
 
 const path = require('node:path');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 
-// Defer the workspace-resolved requires until after process.chdir below,
-// so this script works regardless of which cwd it's invoked from.
-const ghostCore = '/home/ghost/ghost/core';
+// Resolve ghost/core for BOTH layouts: dev bind-mounts the source repo (ghost/core
+// at /home/ghost/ghost/core), while the packed PRODUCTION image IS ghost/core mounted
+// at /home/ghost (no nested ghost/core). Detect by the markers this script needs.
+function resolveGhostCore() {
+    const candidates = [
+        process.env.GHOST_CORE_DIR,
+        '/home/ghost/ghost/core', // dev: bind-mounted source
+        '/home/ghost'             // prod: packed standalone (ghost/core is the app root)
+    ].filter(Boolean);
+    for (const c of candidates) {
+        try {
+            if (fs.existsSync(path.join(c, 'node_modules', 'knex')) &&
+                fs.existsSync(path.join(c, 'core', 'shared', 'config'))) {
+                return c;
+            }
+        } catch (e) { /* try next candidate */ }
+    }
+    throw new Error('townbrief-add-site: could not locate ghost/core (set GHOST_CORE_DIR)');
+}
+const ghostCore = resolveGhostCore();
 process.chdir(ghostCore);
 const knex = require(path.join(ghostCore, 'node_modules/knex'));
 
