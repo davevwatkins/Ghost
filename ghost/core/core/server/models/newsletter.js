@@ -9,7 +9,14 @@ const Newsletter = ghostBookshelf.Model.extend({
     defaults: function defaults() {
         return {
             uuid: crypto.randomUUID(),
+            // TownBrief branding default: every newsletter is born sending from the
+            // shared branded address with the "by Town Brief" footer, so newly
+            // provisioned sites are branded without a manual step. sender_reply_to
+            // stays 'newsletter' (resolves to sender_email), giving reply-to =
+            // news@townbrief.com. See townbrief-email-branding-standard.
+            sender_email: 'news@townbrief.com',
             sender_reply_to: 'newsletter',
+            footer_content: '<p>A Town Brief publication. <a href="https://townbrief.com">townbrief.com</a></p>',
             status: 'active',
             visibility: 'members',
             subscribe_on_signup: true,
