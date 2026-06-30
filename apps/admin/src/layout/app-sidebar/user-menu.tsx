@@ -8,7 +8,7 @@ import { useUserPreferences, useEditUserPreferences } from "@/hooks/user-prefere
 import { useWhatsNew } from "@/whats-new/hooks/use-whats-new";
 import { useUpgradeStatus } from "./hooks/use-upgrade-status";
 import { useBrowseSite } from "@tryghost/admin-x-framework/api/site";
-import { useBrowseAvailableSites, adminUrlForSite, navigateToSiteWithSSO } from "@tryghost/admin-x-framework/api/sites";
+import { useBrowseAvailableSites, navigateToSiteWithSSO } from "@tryghost/admin-x-framework/api/sites";
 import { UserMenuItem } from "./user-menu-item";
 import { UserMenuAvatar } from "./user-menu-avatar";
 import { UserMenuHeader } from "./user-menu-header";
