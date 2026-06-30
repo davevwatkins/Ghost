@@ -1,0 +1,48 @@
+# Staging override — run the MULTITENANT stack next to the live per-town fleet on the
+# SAME OVH box, WITHOUT touching the live :80/:443 or any live data.
+#
+# Why this is safe:
+#   * Use it with `-p townbrief-mt` → its own containers, volumes, and network, fully
+#     isolated from BOTH the live `townbrief` fleet and the default `townbrief-prod`.
+#   * Ghost is published ONLY on 127.0.0.1:2369 (loopback) — not publicly reachable and
+#     no collision with the live Caddy on :80/:443.
+#   * Caddy is NOT started in staging (the `up` command lists services explicitly and
+#     omits caddy), so wildcard ACME — which needs DNS on Cloudflare, not yet done —
+#     never runs and nothing competes for :80/:443.
+#
+# Prereqs: CI image built (push of `townbrief` triggers it), and `cp .env.example .env`
+# with Postgres + ghost_app passwords + GHOST_PUBLIC_URL + SMTP filled in.
+# ACME_EMAIL / CLOUDFLARE_API_TOKEN can stay blank for staging (Caddy isn't started).
+#
+# Stand up (from /root/townbrief-mt/deploy):
+#   docker compose -p townbrief-mt -f compose.production.yaml -f compose.staging.yaml \
+#       up -d postgres redis ghost
+#
+# Verify RLS role is non-super:
+#   docker compose -p townbrief-mt -f compose.production.yaml exec postgres \
+#     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+#     -c "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname='ghost_app';"
+#
+# Smoke-test the multitenant app by Host header (no TLS needed):
+#   curl -s -H 'Host: middlesexcounty.townbrief.com' http://127.0.0.1:2369/ -o /dev/null -w 'HTTP %{http_code}\n'
+#
+# Provision a test tenant, then re-curl its host:
+#   docker compose -p townbrief-mt -f compose.production.yaml exec ghost \
+#     node scripts/townbrief-add-site.js --slug=wayland --name="Wayland" \
+#       --host=wayland.townbrief.com --owner-email=editor@townbrief.com
+#
+# Tear down (live fleet untouched);  add -v to also drop staging volumes for a clean re-test:
+#   docker compose -p townbrief-mt -f compose.production.yaml -f compose.staging.yaml down
+
+services:
+  ghost:
+    # Base compose publishes no ghost ports, so this loopback publish is a safe append
+    # (no list-merge surprises). Lets you curl the multitenant Ghost directly by Host header.
+    ports:
+      - "127.0.0.1:2369:2368"
+
+networks:
+  # Base compose hardcodes the network name `townbrief_prod`; rename it so the staging
+  # stack gets its own isolated network and can never collide with a real prod project.
+  default:
+    name: townbrief_mt
