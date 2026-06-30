@@ -235,6 +235,65 @@ if len(SITES) >= 2:
     check(f"isolation: {SITES[0]} cookie on {SITES[1]} host != 200 (no cross-host auth)",
           other.status_code != 200, f"{SITES[1]}={other.status_code}")
 
+# ---- SECTION 7 (writes; gated by TB_WRITE_TESTS) — publish -> front-end -> email ----
+# Off by default (creates + deletes a test post and triggers an email). Run with
+# TB_WRITE_TESTS=1. Email lands in Mailpit on dev; in prod it only checks the send was
+# accepted (verify real inbox delivery manually / via your ESP dashboard).
+if os.environ.get("TB_WRITE_TESTS"):
+    import time as _time
+    import subprocess as _sub
+    import json as _json
+
+    def _mailpit_count():
+        try:
+            r = _sub.run(["docker", "exec", os.environ.get("TB_MAILPIT", "ghost-dev-mailpit"),
+                          "wget", "-qO-", "http://localhost:8025/api/v1/messages"],
+                         capture_output=True, text=True, timeout=10)
+            j = _json.loads(r.stdout)
+            return j.get("messages_count", j.get("total"))
+        except Exception:
+            return None
+
+    section("SECTION 7 - Publish -> front-end -> email (writes; TB_WRITE_TESTS=1)")
+    town = SITES[0]
+    s = site_session(town)
+    api = f"{base(town)}/ghost/api/admin"
+    stamp = int(_time.time())
+    body = f"smoke-test body {stamp} (safe to delete)"
+    post_id = None
+    try:
+        cr = s.post(f"{api}/posts/?source=html", headers=AV, timeout=TIMEOUT, verify=VERIFY,
+                    json={"posts": [{"title": f"SMOKE-TEST {stamp}", "html": f"<p>{body}</p>", "status": "published"}]})
+        post = (cr.json().get("posts") or [{}])[0]
+        post_id, post_url = post.get("id"), post.get("url")
+        check(f"{town}: create + publish post", cr.status_code in (200, 201) and bool(post_id), f"status={cr.status_code}")
+        if post_url:
+            fr = requests.get(post_url, timeout=TIMEOUT, verify=VERIFY)
+            check(f"{town}: published post renders on front-end", fr.status_code == 200 and body in fr.text, f"status={fr.status_code}")
+    except Exception as e:
+        check(f"{town}: create + publish post", False, str(e)[:60])
+
+    test_email = f"smoke-{stamp}@example.com"
+    before = _mailpit_count()
+    ml = requests.post(f"{base(town)}/members/api/send-magic-link/", timeout=TIMEOUT, verify=VERIFY,
+                       json={"email": test_email, "emailType": "signup"})
+    check(f"{town}: magic-link email send accepted", ml.status_code in (200, 201, 204), f"status={ml.status_code}")
+    if before is not None:
+        _time.sleep(2)
+        after = _mailpit_count()
+        check(f"{town}: outbound email captured (Mailpit)", (after or 0) > (before or 0), f"before={before} after={after}")
+    else:
+        warn(f"{town}: email delivery", "Mailpit unreachable — verify real inbox delivery in prod")
+
+    if post_id:
+        dr = s.delete(f"{api}/posts/{post_id}/", headers=AV, timeout=TIMEOUT, verify=VERIFY)
+        check(f"{town}: cleanup test post", dr.status_code in (200, 204), f"status={dr.status_code}")
+    try:
+        for mem in s.get(f"{api}/members/?filter=email:'{test_email}'", headers=AV, timeout=TIMEOUT, verify=VERIFY).json().get("members", []):
+            s.delete(f"{api}/members/{mem['id']}/", headers=AV, timeout=TIMEOUT, verify=VERIFY)
+    except Exception:
+        pass
+
 print("\n" + "=" * 70)
 print(f"RESULT: {P} passed, {F} failed, {W} warnings")
 print("=" * 70)
