@@ -90,7 +90,7 @@ async function mintHandler(req, res, next) {
 // NO auth required — the token IS the authentication.
 // Side effects: creates mirror user if absent, establishes Ghost
 // session with verified=true, 302s to /ghost/.
-async function redeemHandler(req, res, next) {
+async function redeemHandler(req, res, nextFn) {
     try {
         const token = req.query && req.query.token;
         if (!token) {
@@ -130,15 +130,30 @@ async function redeemHandler(req, res, next) {
         // resolve; reusing the session here keeps every tab valid.
         await sessionService.createVerifiedSessionForUser(req, res, user);
 
+        // ORIGIN FIX (the real cause of "SSO lands on Ghost login"): the redeem
+        // request's Origin/Referer is the SUPERADMIN host (it initiated the cross-
+        // site redirect), so createSessionForUser stores session.origin=superadmin.
+        // Ghost's admin-API CSRF/origin check (cookieCsrfProtection) then rejects
+        // EVERY subsequent town-admin request with 400 "Request made from incorrect
+        // origin. Expected 'https://superadmin.townbrief.com'" -> admin can't load
+        // -> signin. Pin the origin to THIS site (the town) so the check passes.
+        req.session.origin = `https://${req.headers.host}`;
+
         // Redirect to the admin UI on this host. Honour a same-origin `next`
-        // deep-link target (e.g. /ghost/#/members) so the superadmin launcher can
-        // land you directly on a section; default to /ghost/. Validated to a
-        // /ghost/ path to prevent open redirects.
-        const next = req.query && req.query.next;
-        const target = (typeof next === 'string' && /^\/ghost\//.test(next)) ? next : '/ghost/';
+        // deep-link target; default to /ghost/. Validated to prevent open redirects.
+        const nextParam = req.query && req.query.next;
+        const target = (typeof nextParam === 'string' && /^\/ghost\//.test(nextParam)) ? nextParam : '/ghost/';
+
+        // TIMING FIX: explicitly persist the session to the store and AWAIT it
+        // BEFORE redirecting. express-session's res.end hook is supposed to do
+        // this, but forcing it here removes any race where a fast browser requests
+        // /ghost/ before the session row is committed -> validation misses it ->
+        // 401 -> signin screen.
+        await new Promise((resolve, reject) => req.session.save(err => (err ? reject(err) : resolve())));
+
         res.redirect(303, target);
     } catch (err) {
-        next(err);
+        nextFn(err);
     }
 }
 

@@ -102,6 +102,10 @@ const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'townbrief2026';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'townbrief-superadmin-dev-secret';
 const GHOST_ADMIN_HOST = process.env.GHOST_ADMIN_HOST || 'middlesexcounty.localtest.me';
+// Base domain + scheme for cross-site SSO redeem redirects. Dev defaults to
+// localtest.me over http; prod sets SSO_BASE_DOMAIN=townbrief.com, SSO_SCHEME=https.
+const SSO_BASE_DOMAIN = process.env.SSO_BASE_DOMAIN || 'localtest.me';
+const SSO_SCHEME = process.env.SSO_SCHEME || 'http';
 
 const pool = new Pool({
     host: process.env.PGHOST || 'ghost-dev-postgres',
@@ -404,12 +408,19 @@ app.get('/sso/:slug', requireAuth, async (req, res) => {
         const nonce = crypto.randomBytes(16).toString('base64url');
         const token = buildSsoToken({userId, targetSiteId, exp, nonce}, secret);
 
-        let redeemUrl = `http://${slug}.localtest.me/ghost/api/admin/session/sso-redeem?token=${encodeURIComponent(token)}`;
+        let redeemUrl = `${SSO_SCHEME}://${slug}.${SSO_BASE_DOMAIN}/ghost/api/admin/session/sso-redeem?token=${encodeURIComponent(token)}`;
         // Optional deep-link target (e.g. /ghost/#/members) so the launcher can
         // drop you straight into a section of the target site's admin.
         if (req.query.next) {
             redeemUrl += `&next=${encodeURIComponent(req.query.next)}`;
         }
+
+        // NEVER cache this redirect: it carries a SINGLE-USE SSO token. If the
+        // browser (or a prefetch, or a back-navigation) replays a cached response,
+        // the token is already spent and the redeem returns 401 "SSO token already
+        // used" -> the user lands on the Ghost login screen. This header is the fix.
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+        res.set('Pragma', 'no-cache');
         res.redirect(302, redeemUrl);
     } catch (err) {
         res.status(500).send(`SSO error: ${err.message}`);

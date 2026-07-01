@@ -154,6 +154,9 @@ services:
       PGDATABASE: ${POSTGRES_DB}
       # Default-site host (dashboard links + SSO secret source).
       GHOST_ADMIN_HOST: ${SUPERADMIN_GHOST_HOST:-middlesexcounty.townbrief.com}
+      # Cross-site SSO redeem redirects target the prod domain over TLS.
+      SSO_BASE_DOMAIN: ${SSO_BASE_DOMAIN:-townbrief.com}
+      SSO_SCHEME: ${SSO_SCHEME:-https}
       ADMIN_USER: ${SUPERADMIN_USER:-admin}
       ADMIN_PASS: ${SUPERADMIN_PASS}
       SESSION_SECRET: ${SUPERADMIN_SESSION_SECRET}

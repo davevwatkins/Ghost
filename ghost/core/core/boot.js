@@ -150,9 +150,20 @@ async function ensureRowLevelSecurity() {
             await knex.raw(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
             await knex.raw(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`);
             await knex.raw(`DROP POLICY IF EXISTS townbrief_site_isolation ON ${table}`);
+            // The ghost-internal-frontend content key is a single shared, READ-ONLY key that
+            // getFrontendKey() embeds into every tenant's server-rendered HTML (Portal.js /
+            // search), so it must be visible from ANY site context. Mirrors migration
+            // internal-frontend-key-cross-site-rls so a fresh RLS install matches it. Writes
+            // stay site-isolated: the bypass is only in USING, never in WITH CHECK.
+            let tbFrontendKeyBypass = '';
+            if (table === 'integrations') {
+                tbFrontendKeyBypass = ` OR slug = 'ghost-internal-frontend'`;
+            } else if (table === 'api_keys') {
+                tbFrontendKeyBypass = ` OR EXISTS (SELECT 1 FROM integrations tbint WHERE tbint.id = api_keys.integration_id AND tbint.slug = 'ghost-internal-frontend')`;
+            }
             await knex.raw(`
                 CREATE POLICY townbrief_site_isolation ON ${table}
-                USING (site_id = current_site_id() OR current_site_id() IS NULL)
+                USING (site_id = current_site_id() OR current_site_id() IS NULL${tbFrontendKeyBypass})
                 WITH CHECK (site_id = current_site_id() OR current_site_id() IS NULL)
             `);
             installed++;

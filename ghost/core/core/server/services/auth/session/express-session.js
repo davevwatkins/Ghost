@@ -22,7 +22,11 @@ function getExpressSessionMiddleware() {
                 maxAge: 6 * 30 * 24 * 60 * 60 * 1000, // 6 months in ms
                 httpOnly: true,
                 path: urlUtils.getSubdir() + '/ghost',
-                sameSite: urlUtils.isSSL(config.get('url')) ? 'none' : 'lax',
+                // SameSite=Lax (not 'none') so the cross-site superadmin -> tenant
+                // SSO redeem cookie isn't dropped by browsers' third-party-cookie
+                // blocking. Each tenant admin is same-origin, so Lax is sufficient and
+                // the redeem (a top-level navigation) still gets the cookie stored + sent.
+                sameSite: 'lax',
                 secure: urlUtils.isSSL(config.get('url'))
             }
         });
