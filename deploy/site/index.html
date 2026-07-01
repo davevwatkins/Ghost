@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TownBrief — Local government, covered. Every meeting. Every town.</title>
-<meta name="description" content="TownBrief covers every public board and committee meeting in Middlesex County, Massachusetts — AP-style articles, daily roundups, and a local government data API, powered by AI and verified by a human editor.">
+<meta name="description" content="TownBrief covers every public board and committee meeting across Massachusetts — AP-style articles, daily roundups, and a local government data API, powered by AI and verified by a human editor.">
 <meta property="og:title" content="TownBrief">
-<meta property="og:description" content="Local government, covered. Every meeting. Every town. Middlesex County, MA.">
+<meta property="og:description" content="Local government, covered. Every meeting. Every town. All of Massachusetts.">
 <meta property="og:url" content="https://townbrief.com">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -517,7 +517,7 @@ a.town-card:hover { border-color: var(--blue); background: var(--surface); }
       <span class="accent">Town</span><span class="dark">Brief</span>
     </div>
     <div class="masthead-tagline">Local government, covered. Every meeting. Every town.</div>
-    <div class="masthead-sub">Middlesex County, Massachusetts &nbsp;&middot;&nbsp; Readers &amp; Developers</div>
+    <div class="masthead-sub">Massachusetts &nbsp;&middot;&nbsp; Readers &amp; Developers</div>
   </div>
 </header>
 
@@ -1985,17 +1985,6 @@ a.town-card:hover { border-color: var(--blue); background: var(--surface); }
 
 </section>
 
----
-
-That's the complete block. A few notes on what was done and any edge cases:
-
-- **MySQL query**: ran per-DB to avoid the `UNION ALL` size limit and handle DBs with missing `posts` table (e.g., `hawley`, `southampton`, `taunton` â€” those Ghost instances exist but the `posts` table is absent, so their counts are shown as 0/"new").
-- **County aggregators**: sorted by article count descending; Bristol, Dukes, and Suffolk show "launching" badges per the 0-count rule.
-- **Wayland**: hardcoded to `wayland.townbrief.com` with "5,380+ articles" as specified.
-- **Suffolk towns**: Boston, Chelsea, Revere, Winthrop have no Ghost DBs on the server yet so all show "new".
-- **Hyphened slugs**: display names title-cased correctly (e.g., `east-bridgewater` â†’ "East Bridgewater", `manchester-by-the-sea` â†’ "Manchester By The Sea").
-- **Singular/plural**: "1 article" vs "N articles" correctly handled throughout.
-
 <!-- History -->
 <section class="section" id="history">
   <div class="container">
@@ -2095,7 +2084,7 @@ That's the complete block. A few notes on what was done and any edge cases:
           <li class="yes">Last 10 days of data</li>
           <li class="yes">1 town</li>
           <li class="yes">Articles &amp; briefs only</li>
-          <li class="yes">100 calls / day</li>
+          <li class="yes">25 calls / day</li>
           <li class="no">No MCP server access</li>
           <li class="no">No transcripts or SRT</li>
         </ul>
@@ -2103,25 +2092,13 @@ That's the complete block. A few notes on what was done and any edge cases:
       <div class="tier-card featured">
         <div class="tier-badge">Most popular</div>
         <div class="tier-name">Pro</div>
-        <div class="tier-price">Metered &middot; per 1,000 calls</div>
+        <div class="tier-price">Metered &middot; per 10 calls</div>
         <ul class="tier-features">
           <li class="yes">MCP server access <span class="mcp-pill">MCP</span></li>
           <li class="yes">Full archive (2025&ndash;present)</li>
-          <li class="yes">All Middlesex towns</li>
+          <li class="yes">All Massachusetts towns</li>
           <li class="yes">Transcripts + SRT files</li>
           <li class="yes">Pay only for what you use</li>
-        </ul>
-      </div>
-      <div class="tier-card">
-        <div class="tier-name">Enterprise</div>
-        <div class="tier-price">Contact us</div>
-        <ul class="tier-features">
-          <li class="yes">MCP server access <span class="mcp-pill">MCP</span></li>
-          <li class="yes">Multi-county licensing</li>
-          <li class="yes">White-label data feeds</li>
-          <li class="yes">Custom town onboarding</li>
-          <li class="yes">SLA &amp; priority support</li>
-          <li class="yes">Unlimited calls</li>
         </ul>
       </div>
     </div>
@@ -2140,11 +2117,6 @@ That's the complete block. A few notes on what was done and any edge cases:
     <h2>Stay informed. Support local journalism.</h2>
     <p>Free subscribers get daily news roundups, sports, and obituaries. Paid subscribers unlock full committee-by-committee coverage — the Select Board debates, Planning Board hearings, Finance Committee deliberations, and school board decisions that shape your town.</p>
     <p>Subscriptions fund this journalism directly. There are no advertisers setting the agenda.</p>
-    <div class="cta-row">
-      <a class="btn primary" href="https://wayland.townbrief.com/#/portal/signup">Wayland &rarr;</a>
-      <a class="btn primary" href="https://sudbury.townbrief.com/#/portal/signup">Sudbury &rarr;</a>
-      <a class="btn" href="https://middlesexcounty.townbrief.com/#/portal/signup">Middlesex County News &rarr;</a>
-    </div>
   </div>
 </section>
 
@@ -2153,17 +2125,23 @@ That's the complete block. A few notes on what was done and any edge cases:
 <footer class="footer">
   <div class="container">
     <p>
-      TownBrief &nbsp;&middot;&nbsp; Middlesex &amp; Norfolk Counties, Massachusetts<br>
-      <a href="https://wayland.townbrief.com">Wayland</a> &middot;
-      <a href="https://sudbury.townbrief.com">Sudbury</a> &middot;
-      <a href="https://weston.townbrief.com">Weston</a> &middot;
-      <a href="https://lincoln.townbrief.com">Lincoln</a> &middot;
-      <a href="https://wellesley.townbrief.com">Wellesley</a> &middot;
-      <a href="https://norfolk.townbrief.com">Norfolk</a><br>
-      <a href="https://middlesexcounty.townbrief.com">Middlesex County News</a> &middot;
-      <a href="https://norfolkcounty.townbrief.com">Norfolk County News</a>
-      &nbsp;&middot;&nbsp;
-      <a href="mailto:dave@townbrief.com">dave@townbrief.com</a>
+      TownBrief &nbsp;&middot;&nbsp; All 14 Massachusetts counties &nbsp;&middot;&nbsp; 350 towns and cities<br>
+      <a href="https://massachusetts.townbrief.com">Massachusetts</a> &middot;
+      <a href="https://middlesexcounty.townbrief.com">Middlesex</a> &middot;
+      <a href="https://norfolkcounty.townbrief.com">Norfolk</a> &middot;
+      <a href="https://suffolkcounty.townbrief.com">Suffolk</a> &middot;
+      <a href="https://worcestercounty.townbrief.com">Worcester</a> &middot;
+      <a href="https://essexcounty.townbrief.com">Essex</a> &middot;
+      <a href="https://plymouthcounty.townbrief.com">Plymouth</a> &middot;
+      <a href="https://bristolcounty.townbrief.com">Bristol</a> &middot;
+      <a href="https://hampshirecounty.townbrief.com">Hampshire</a> &middot;
+      <a href="https://hampdencounty.townbrief.com">Hampden</a> &middot;
+      <a href="https://berkshirecounty.townbrief.com">Berkshire</a> &middot;
+      <a href="https://franklincounty.townbrief.com">Franklin</a> &middot;
+      <a href="https://barnstablecounty.townbrief.com">Barnstable</a> &middot;
+      <a href="https://dukescounty.townbrief.com">Dukes</a> &middot;
+      <a href="https://nantucketcounty.townbrief.com">Nantucket</a><br>
+      <a href="#towns">Browse all towns</a> &nbsp;&middot;&nbsp; <a href="mailto:dave@townbrief.com">dave@townbrief.com</a>
     </p>
     <p style="margin-top: 0.5rem;">&copy; 2026 TownBrief. All coverage reviewed by a human editor.</p>
   </div>
